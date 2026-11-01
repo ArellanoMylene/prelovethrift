@@ -1,0 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
+
+:root {
+ --coral: #db6b6b; --coral-dark: #c45c5c; --coral-soft: #f8dede;
+ --cream: #fbf9f6; --sand: #f3ebe4; --ink: #2b2220; --muted: #6f6360;
+ --mauve: #96507a; --gold: #b88a4a;
+ --font-head: 'Montserrat', sans-serif; --font-body: 'Montserrat', sans-serif;
+ --ion-font-family: var(--font-body);
+ --ion-background-color: var(--cream); --ion-text-color: var(--ink);
+ --ion-color-primary: #db6b6b; --ion-color-primary-rgb: 219,107,107;
+ --ion-color-primary-contrast: #fff; --ion-color-primary-shade: #c15e5e; --ion-color-primary-tint: #df7a7a;
+}
+body { background: var(--cream); color: var(--ink); }
+h1, h2, h3 { font-family: var(--font-head); margin: 0; color: var(--ink); font-weight: 700; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+.section { padding: 56px 0; }
+.sec-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 26px; gap:
+ 12px; }
+.sec-head h2 { font-size: 32px; }
+.sec-head p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+.link { color: var(--coral); font-weight: 600; font-size: 14px; text-decoration: none; cursor: pointer; }
+.btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 15px 28px; font: 600
+ 15px var(--font-body); cursor: pointer; border: 1px solid transparent; }
+.btn-coral { background: var(--coral); color: #fff; box-shadow: 0 10px 22px rgba(219,107,107,.32); }
+.btn-ghost { background: #fff; color: var(--ink); border-color: #e5dcd6; }
