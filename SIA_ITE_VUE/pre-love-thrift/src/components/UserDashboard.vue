@@ -11,11 +11,10 @@
         </div>
         <nav aria-label="Account dashboard">
           <button v-for="item in navItems" :key="item.id" :class="{ active: view === item.id }"
-            @click="view = item.id">
+          @click="navigateDashboard(item.id)">
             <ion-icon :icon="item.icon" /><span>{{ item.label }}</span>
             <small v-if="item.id === 'wishlist' && wishlist.length">{{ wishlist.length }}</small>
           </button>
-          <button class="logout-link" @click="$emit('logout')"><ion-icon :icon="logOutOutline" /><span>Log out</span></button>
         </nav>
       </aside>
 
@@ -24,7 +23,7 @@
           <div class="welcome">
             <div><span class="eyebrow">YOUR ACCOUNT</span><h1>Welcome back, {{ firstName }}!</h1>
               <p>Find something lovely, or pick up where you left off.</p></div>
-            <button class="shop-button" @click="$emit('storefront')">Explore the shop <ion-icon :icon="arrowForwardOutline" /></button>
+            <button class="shop-button" @click="openShop">Explore the shop <ion-icon :icon="arrowForwardOutline" /></button>
           </div>
           <div class="stats">
             <article><span class="stat-icon"><ion-icon :icon="bagHandleOutline" /></span><div><b>{{ orders.length }}</b><small>Orders placed</small></div></article>
@@ -47,13 +46,32 @@
           </section>
           <section class="panel picked">
             <div class="panel-heading"><div><span class="eyebrow">A FEW GOOD FINDS</span><h2>Picked for you</h2></div>
-              <button class="text-button" @click="$emit('storefront')">Shop all <ion-icon :icon="arrowForwardOutline" /></button></div>
+              <button class="text-button" @click="openShop">Shop all <ion-icon :icon="arrowForwardOutline" /></button></div>
             <ProductGrid :products="products" :wishlist="wishlist" @add-cart="(product) => $emit('add-cart', product)"
               @toggle-wish="(product) => $emit('toggle-wish', product)" />
           </section>
         </template>
 
         <template v-else-if="view === 'categories'">
+          <section class="panel shop-collection">
+            <div class="panel-heading"><div><span class="eyebrow">FIND YOUR NEXT FAVORITE</span><h2>Shop by category</h2></div></div>
+            <div class="category-filters" aria-label="Filter products by category">
+              <button type="button" :class="{ active: !selectedCategory }" @click="selectedCategory = ''">All items</button>
+              <button v-for="category in availableCategories" :key="category" type="button"
+                :class="{ active: selectedCategory === category }" @click="selectCategory(category)">{{ category }}</button>
+            </div>
+            <div v-if="categoryProducts.length" class="category-products">
+              <ProductGrid :products="categoryProducts" :wishlist="wishlist"
+                @add-cart="(product) => $emit('add-cart', product)" @toggle-wish="(product) => $emit('toggle-wish', product)" />
+            </div>
+            <div v-else class="empty-state"><div><b>No items in this category yet</b><p>Try another category or check back later.</p></div></div>
+          </section>
+          <section class="panel shop-collection">
+            <div class="panel-heading"><div><span class="eyebrow">JUST LISTED</span><h2>New arrivals</h2></div></div>
+            <ProductGrid v-if="newArrivals.length" :products="newArrivals" :wishlist="wishlist"
+              @add-cart="(product) => $emit('add-cart', product)" @toggle-wish="(product) => $emit('toggle-wish', product)" />
+            <div v-else class="empty-state"><div><b>No new arrivals yet</b><p>Newly listed items will appear here.</p></div></div>
+          </section>
         </template>
 
         <template v-else-if="view === 'orders'">
@@ -61,7 +79,7 @@
           <section class="panel order-page">
             <div v-if="!orders.length" class="empty-state"><span class="empty-icon"><ion-icon :icon="bagHandleOutline" /></span>
               <div><b>Your order history is empty</b><p>Once you complete a checkout, your purchases will show up here.</p></div>
-              <button class="outline-button" @click="$emit('storefront')">Browse the shop</button></div>
+              <button class="outline-button" @click="openShop">Browse the shop</button></div>
             <div v-else class="tracking-list">
               <article v-for="order in orders" :key="order.id" class="tracking-order">
                 <div class="tracking-header">
@@ -97,11 +115,10 @@
 
                 <div v-if="isOrderConfirmed(order)" class="rider-row">
                   <span>Rider</span>
-                  <strong>{{ order.rider || 'Rider is being assigned' }}</strong>
-                </div>
-                <div v-if="isOrderConfirmed(order) && (order.riderPhone || order.riderEmail)" class="rider-contact">
-                  <a v-if="order.riderPhone" :href="`tel:${order.riderPhone}`">Call rider · {{ order.riderPhone }}</a>
-                  <a v-if="order.riderEmail" :href="`mailto:${order.riderEmail}`">Email rider · {{ order.riderEmail }}</a>
+                  <a v-if="order.riderPhone" class="rider-phone" :href="`tel:${order.riderPhone}`">
+                    {{ order.rider || 'Rider' }} · {{ order.riderPhone }}
+                  </a>
+                  <strong v-else>{{ order.rider || 'Rider is being assigned' }}</strong>
                 </div>
 
                 <div v-if="order.customerAddress" class="customer-location-row">
@@ -140,15 +157,15 @@
           <section class="panel picked">
             <div v-if="!wishlist.length" class="empty-state"><span class="empty-icon"><ion-icon :icon="heartOutline" /></span>
               <div><b>No favorites saved yet</b><p>Tap the heart on an item to add it to your wishlist.</p></div>
-              <button class="outline-button" @click="$emit('storefront')">Explore finds</button></div>
+              <button class="outline-button" @click="openShop">Explore finds</button></div>
             <ProductGrid v-else :products="wishlistProducts" :wishlist="wishlist" :show-remove="true"
               @add-cart="(product) => $emit('add-cart', product)" @toggle-wish="(product) => $emit('toggle-wish', product)" />
           </section>
         </template>
 
         <template v-else>
-          <div class="page-heading"><span class="eyebrow">YOUR DETAILS</span><h1>Profile</h1>
-            <p>Here’s the account information associated with your PRE-LOVED Thrift account.</p></div>
+          <div class="page-heading"><span class="eyebrow">YOUR DETAILS</span><h1><ion-icon :icon="personOutline" /> Profile</h1>
+            <p>Manage your personal information and profile photo.</p></div>
           <section class="panel profile-card">
             <div class="profile-photo-control">
               <span class="profile-avatar">
@@ -156,7 +173,7 @@
                 <template v-else>{{ user.name.charAt(0).toUpperCase() }}</template>
               </span>
               <input ref="photoInput" class="photo-input" type="file" accept="image/png,image/jpeg,image/webp" @change="handlePhotoChange" />
-              <button class="change-photo" type="button" @click="photoInput?.click()">Change photo</button>
+              <button class="change-photo" type="button" @click="photoInput?.click()">Upload profile photo</button>
               <small v-if="profilePhotoError" class="photo-error" role="alert">{{ profilePhotoError }}</small>
             </div>
             <div class="profile-details">
@@ -166,45 +183,55 @@
               <div><small>ADDRESS</small><b>{{ user.address || 'Not added yet' }}</b></div>
             </div>
             <button class="edit-profile" type="button" aria-label="Edit profile" @click="startProfileEdit">
-              <ion-icon :icon="createOutline" />
+              <ion-icon :icon="createOutline" /><span>Edit profile</span>
             </button>
           </section>
 
-          <div v-if="profileEditOpen" class="profile-edit-overlay" @click.self="profileEditOpen = false">
-            <div class="profile-edit-modal" role="dialog" aria-modal="true" aria-label="Edit profile">
-              <div class="profile-edit-header">
-                <div class="profile-brand" aria-label="Pre-Loved Thrift logo">
-                  <img class="brand-mark" src="/assets/logo-emblem.png" alt="Pre-Loved Thrift" />
-                  <span>PRE-LOVED<br />THRIFT</span>
-                </div>
-                <button class="close-profile" type="button" aria-label="Close profile editor" @click="profileEditOpen = false">
-                  <ion-icon :icon="closeOutline" />
-                </button>
-              </div>
-
-              <div class="profile-edit-body">
-                <label>
-                  <span>Enter your full name</span>
-                  <input v-model="profileDraft.name" type="text" />
-                </label>
-                <label>
-                  <span>Phone number</span>
-                  <input v-model="profileDraft.phone" type="tel" />
-                </label>
-                <label>
-                  <span>Address</span>
-                  <input v-model="profileDraft.address" type="text" />
-                </label>
-              </div>
-
-              <div class="profile-edit-actions">
-                <button class="save-button" type="button" @click="saveProfileEdit">OK</button>
-                <button class="cancel-button" type="button" @click="profileEditOpen = false">Cancel</button>
-              </div>
-            </div>
-          </div>
         </template>
       </main>
+    </div>
+    <div v-if="profileEditOpen" class="profile-edit-overlay" @click.self="profileEditOpen = false">
+      <div class="profile-edit-modal" role="dialog" aria-modal="true" aria-label="Edit profile">
+        <div class="profile-edit-header">
+          <div class="profile-brand" aria-label="Pre-Loved Thrift logo">
+            <img class="brand-mark" src="/assets/logo-emblem.png" alt="Pre-Loved Thrift" />
+            <span>PRE-LOVED<br />THRIFT</span>
+          </div>
+          <button class="close-profile" type="button" aria-label="Close profile editor" @click="profileEditOpen = false">
+            <ion-icon :icon="closeOutline" />
+          </button>
+        </div>
+
+        <div class="profile-edit-body">
+          <div class="profile-edit-photo">
+            <span class="profile-edit-avatar">
+              <img v-if="profileDraft.avatar" :src="profileDraft.avatar" alt="Profile photo preview" />
+              <template v-else>{{ (profileDraft.name || user.name).charAt(0).toUpperCase() }}</template>
+            </span>
+            <input ref="editPhotoInput" class="photo-input" type="file" accept="image/png,image/jpeg,image/webp" @change="handleEditPhotoChange" />
+            <button type="button" class="change-photo" @click="editPhotoInput?.click()">Upload profile photo</button>
+            <button v-if="profileDraft.avatar" type="button" class="remove-edit-photo" @click="profileDraft.avatar = ''">Remove photo</button>
+          </div>
+          <small v-if="profileEditPhotoError" class="photo-error" role="alert">{{ profileEditPhotoError }}</small>
+          <label>
+            <span>Enter your full name</span>
+            <input v-model="profileDraft.name" type="text" />
+          </label>
+          <label>
+            <span>Phone number</span>
+            <input v-model="profileDraft.phone" type="tel" />
+          </label>
+          <label>
+            <span>Address</span>
+            <input v-model="profileDraft.address" type="text" />
+          </label>
+        </div>
+
+        <div class="profile-edit-actions">
+          <button class="save-button" type="button" @click="saveProfileEdit">OK</button>
+          <button class="cancel-button" type="button" @click="profileEditOpen = false">Cancel</button>
+        </div>
+      </div>
     </div>
   </section>
 </template>
@@ -213,7 +240,7 @@
 import { computed, defineComponent, h, reactive, ref, watch } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import {
-  arrowForwardOutline, bagHandleOutline, cartOutline, heart, heartOutline, logOutOutline,
+  arrowForwardOutline, bagHandleOutline, cartOutline, heart, heartOutline,
   storefrontOutline, personOutline, gridOutline, receiptOutline, createOutline, closeOutline
 } from 'ionicons/icons'
 import type { CartItem, Category, OrderMessage, OrderRecord, Product } from '../data/mockData'
@@ -230,7 +257,6 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   (event: 'storefront'): void
-  (event: 'logout'): void
   (event: 'add-cart', product: Product): void
   (event: 'toggle-wish', product: Product): void
   (event: 'update-user', user: { name: string; email: string; phone?: string; address?: string; avatar?: string }): void
@@ -245,29 +271,28 @@ watch(() => props.initialView, (next) => {
   if (next) view.value = next
 }, { immediate: true })
 const profileEditOpen = ref(false)
-const profileDraft = ref({ name: '', phone: '', address: '' })
+const profileDraft = ref({ name: '', phone: '', address: '', avatar: '' })
 const photoInput = ref<HTMLInputElement | null>(null)
+const editPhotoInput = ref<HTMLInputElement | null>(null)
 const profilePhotoError = ref('')
+const profileEditPhotoError = ref('')
 const maxProfilePhotoSize = 1024 * 1024
 const firstName = computed(() => props.user.name.trim().split(/\s+/)[0] || 'there')
 const recentOrders = computed(() => props.orders.slice(0, 3))
 const wishlistProducts = computed(() => props.wishlist.map((item) => ({
-  id: Number(item.id), name: item.name, price: item.price, img: item.img, cat: '', slot: item.slot, fit: item.fit
+  id: item.id, name: item.name, price: item.price, img: item.img, cat: item.cat || '', type: item.type, slot: item.slot, fit: item.fit
 })))
-const categoryProducts = computed(() => {
-  if (!selectedCategory.value) return props.products
-  const query = selectedCategory.value.toLowerCase()
-  const match = props.products.filter((product) => {
-    const text = `${product.cat} ${product.name}`.toLowerCase()
-    return query.split(/\W+/).filter(Boolean).some((word) => word.length > 3 && text.includes(word))
-  })
-  return match.length ? match : props.products
-})
-const navItems: Array<{ id: 'overview' | 'orders' | 'wishlist' | 'profile'; label: string; icon: typeof gridOutline }> = [
-  { id: 'overview', label: 'Overview', icon: gridOutline },
+const newArrivals = computed(() => props.products.filter(product => product.newArrival))
+const availableCategories = computed(() => [...new Set(props.products.map(product => product.cat).filter(Boolean))].sort((a, b) => a.localeCompare(b)))
+const categoryProducts = computed(() => selectedCategory.value
+  ? props.products.filter(product => product.cat === selectedCategory.value)
+  : props.products)
+const navItems: Array<{ id: 'overview' | 'orders' | 'wishlist' | 'profile' | 'categories'; label: string; icon: typeof gridOutline }> = [
+  { id: 'overview', label: 'Dashboard', icon: gridOutline },
+  { id: 'categories', label: 'Shop', icon: storefrontOutline },
   { id: 'orders', label: 'My orders', icon: receiptOutline },
   { id: 'wishlist', label: 'Wishlist', icon: heart },
-  { id: 'profile', label: 'Profile', icon: personOutline }
+  { id: 'profile', label: 'Profile', icon: personOutline },
 ]
 const trackingSteps = ['Confirmed', 'Packed', 'Shipped', 'Delivered']
 
@@ -301,7 +326,9 @@ const ProductGrid = defineComponent({
       return h('article', { class: 'product-card', key: product.id }, [
         h('div', { class: 'product-image' }, [
           h('img', { src: product.img, alt: product.name }),
-          product.hot ? h('span', { class: 'hot-label' }, 'POPULAR') : null,
+          product.newArrival
+            ? h('span', { class: 'hot-label' }, 'NEW ARRIVAL')
+            : product.hot ? h('span', { class: 'hot-label' }, 'POPULAR') : null,
           h('button', {
             class: ['favorite', { saved: saved || gridProps.showRemove }],
             'aria-label': gridProps.showRemove ? 'Remove from wishlist' : saved ? 'Remove from wishlist' : 'Add to wishlist',
@@ -322,6 +349,14 @@ const ProductGrid = defineComponent({
   }
 })
 
+function navigateDashboard(destination: 'overview' | 'orders' | 'wishlist' | 'profile' | 'categories') {
+  if (destination === 'categories') selectedCategory.value = ''
+  view.value = destination
+}
+function openShop() {
+  selectedCategory.value = ''
+  view.value = 'categories'
+}
 function selectCategory(category: string) {
   selectedCategory.value = category
   view.value = 'categories'
@@ -330,8 +365,10 @@ function startProfileEdit() {
   profileDraft.value = {
     name: props.user.name || '',
     phone: props.user.phone || '',
-    address: props.user.address || ''
+    address: props.user.address || '',
+    avatar: props.user.avatar || ''
   }
+  profileEditPhotoError.value = ''
   profileEditOpen.value = true
 }
 function saveProfileEdit() {
@@ -339,12 +376,43 @@ function saveProfileEdit() {
     ...props.user,
     name: profileDraft.value.name.trim() || props.user.name,
     phone: profileDraft.value.phone.trim() || undefined,
-    address: profileDraft.value.address.trim() || undefined
+    address: profileDraft.value.address.trim() || undefined,
+    avatar: profileDraft.value.avatar || undefined
   }
 
   localStorage.setItem('pl_me', JSON.stringify(updated))
   profileEditOpen.value = false
   emit('update-user', updated)
+}
+function handleEditPhotoChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  profileEditPhotoError.value = ''
+  if (!file) return
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+    profileEditPhotoError.value = 'Choose a PNG, JPG, or WebP image.'
+    input.value = ''
+    return
+  }
+  if (file.size > maxProfilePhotoSize) {
+    profileEditPhotoError.value = 'Choose an image smaller than 1 MB.'
+    input.value = ''
+    return
+  }
+  const reader = new FileReader()
+  reader.onload = () => {
+    if (typeof reader.result !== 'string') {
+      profileEditPhotoError.value = 'Unable to read this image. Please try another file.'
+      return
+    }
+    profileDraft.value.avatar = reader.result
+    profileEditPhotoError.value = ''
+  }
+  reader.onerror = () => {
+    profileEditPhotoError.value = 'Unable to read this image. Please try another file.'
+  }
+  reader.readAsDataURL(file)
+  input.value = ''
 }
 function handlePhotoChange(event: Event) {
   const input = event.target as HTMLInputElement
@@ -390,10 +458,10 @@ function sendCustomerMessage(order: OrderRecord) {
 </script>
 
 <style scoped>
-.dashboard { min-height: calc(100vh - 78px); padding: 38px 0 64px; background: #fbf9f6; }
-.dashboard-wrap { width: min(1180px, calc(100% - 40px)); margin: 0 auto; display: grid; grid-template-columns: 248px minmax(0, 1fr); align-items: start; gap: 28px; }
+.dashboard { min-height: calc(100vh - 78px); padding: 0; background: #fbf9f6; }
+.dashboard-wrap { width: 100%; min-height: calc(100vh - 78px); box-sizing: border-box; margin: 0; padding: 0 24px 0 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); align-items: start; gap: 24px; }
 .sidebar, .panel { background: #fff; border: 1px solid #f0e6e0; border-radius: 24px; }
-.sidebar { padding: 18px 14px; position: sticky; top: 98px; }
+.sidebar { height: calc(100vh - 78px); box-sizing: border-box; padding: 16px; position: sticky; top: 78px; align-self: start; overflow-y: auto; border-radius: 0; }
 .member { padding: 8px 8px 20px; margin-bottom: 12px; border-bottom: 1px solid #f1e9e4; display: flex; align-items: center; gap: 12px; min-width: 0; }
 .avatar, .profile-avatar { width: 44px; height: 44px; flex: 0 0 auto; border-radius: 50%; display: grid; place-items: center; background: #f9e2df; color: var(--coral-dark); font: 700 20px var(--font-head); overflow: hidden; }
 .avatar img, .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -442,7 +510,8 @@ function sendCustomerMessage(order: OrderRecord) {
 .order-thumbs { display: flex; grid-column: 1 / -1; }
 .order-thumbs img { width: 38px; height: 38px; object-fit: cover; background: #faf4f1; border: 2px solid white; border-radius: 10px; margin-right: -6px; }
 .page-heading { padding: 8px 4px 4px; }
-.page-heading h1 { color: var(--ink); }
+.page-heading h1 { display: flex; align-items: center; gap: 9px; color: var(--ink); }
+.page-heading h1 ion-icon { color: var(--coral-dark); font-size: 24px; }
 .page-heading p { color: var(--muted); }
 .category-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .category-card { min-width: 0; border: 1px solid #f0e6e0; border-radius: 17px; overflow: hidden; padding: 0 0 12px; background: #fff; text-align: left; cursor: pointer; color: var(--ink); font: 700 12px var(--font-body); }
@@ -450,6 +519,9 @@ function sendCustomerMessage(order: OrderRecord) {
 .category-card span { margin-left: 12px; }
 .category-card ion-icon { float: right; margin: 0 11px 0 4px; color: var(--coral-dark); }
 .category-card:hover { border-color: #e7b5b1; transform: translateY(-2px); }
+.category-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.category-filters button { padding: 9px 13px; border: 1px solid #efdfda; border-radius: 999px; background: #fff; color: #705f58; cursor: pointer; font: 600 11px var(--font-body); }
+.category-filters button.active, .category-filters button:hover { border-color: var(--coral); background: #f9e2df; color: var(--coral-dark); }
 .category-products { margin-top: 2px; }
 :deep(.product-grid) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 :deep(.product-card) { min-width: 0; overflow: hidden; border: 1px solid #f0e6e0; border-radius: 17px; background: #fff; transition: transform .2s, box-shadow .2s; }
@@ -494,10 +566,9 @@ function sendCustomerMessage(order: OrderRecord) {
 .tracking-step.active .step-dot { background: #d76d68; border-color: #d76d68; box-shadow: 0 0 0 3px rgba(215, 109, 104, 0.2); }
 .step-label { font-size: 12px; color: #a97b74; font-weight: 600; }
 .tracking-step.done .step-label, .tracking-step.active .step-label { color: #d76d68; }
-.rider-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 4px; font-size: 12px; color: #8d7b74; }
-.rider-row strong { color: var(--ink); font-size: 13px; font-weight: 700; }
-.rider-contact { display: flex; flex-wrap: wrap; gap: 8px 14px; }
-.rider-contact a { color: var(--coral-dark); font-size: 11px; font-weight: 600; text-decoration: none; }
+.rider-row { display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding-top: 4px; font-size: 12px; color: #8d7b74; }
+.rider-row strong { color: var(--ink); font-size: 15px; font-weight: 700; }
+.rider-phone { color: var(--coral-dark); font-size: 15px; font-weight: 700; text-decoration: none; }
 .customer-location-row { display: grid; gap: 5px; padding-top: 4px; color: #8d7b74; font-size: 12px; }
 .customer-location-row strong { color: var(--ink); font-size: 12px; font-weight: 600; }
 .customer-proof { display: grid; justify-items: start; gap: 7px; color: #8d7b74; font-size: 12px; }
@@ -530,15 +601,19 @@ function sendCustomerMessage(order: OrderRecord) {
   position: absolute;
   right: 20px;
   top: 20px;
-  width: 40px;
+  min-width: 40px;
   height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
   border: 1px solid #f0e4df;
-  border-radius: 50%;
+  border-radius: 999px;
   background: #fffaf9;
   color: var(--coral-dark);
-  display: grid;
-  place-items: center;
   cursor: pointer;
+  font: 700 11px var(--font-body);
 }
 .edit-profile ion-icon { font-size: 18px; }
 .profile-edit-overlay {
@@ -609,13 +684,19 @@ function sendCustomerMessage(order: OrderRecord) {
   gap: 13px;
   background: #ffffff;
 }
+.profile-edit-photo { display: flex; align-items: center; gap: 10px; }
+.profile-edit-avatar { width: 48px; height: 48px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: #f9e2df; color: var(--coral-dark); font-size: 18px; font-weight: 700; }
+.profile-edit-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.profile-edit-photo .change-photo, .remove-edit-photo { padding: 8px 10px; border: 1px solid #eadfd9; border-radius: 9px; background: #fff; color: var(--coral-dark); cursor: pointer; font: 700 10px var(--font-body); }
+.remove-edit-photo { color: #705f58; }
+.profile-edit-body > .photo-error { max-width: none; text-align: left; }
 .profile-edit-body label {
   display: grid;
   gap: 7px;
   color: #1f1b1b;
   font-weight: 700;
 }
-.profile-edit-body span {
+.profile-edit-body > label > span {
   font-size: 13px;
   line-height: 1.3;
   color: #2b2524;
@@ -662,16 +743,18 @@ function sendCustomerMessage(order: OrderRecord) {
   font-size: 16px;
 }
 @media (max-width: 920px) {
-  .dashboard-wrap { grid-template-columns: 205px minmax(0, 1fr); gap: 16px; }
+  .dashboard-wrap { grid-template-columns: 205px minmax(0, 1fr); gap: 16px; padding-right: 16px; }
+  .sidebar { padding: 12px; }
   :deep(.product-grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stats { gap: 8px; }
   .stats article { padding: 12px 10px; gap: 8px; }
   .stats article small { white-space: normal; }
 }
 @media (max-width: 640px) {
-  .dashboard { padding: 18px 0 40px; }
-  .dashboard-wrap { width: calc(100% - 24px); grid-template-columns: 1fr; gap: 14px; }
-  .sidebar { position: static; padding: 10px; }
+  .dashboard { padding: 0; }
+  .dashboard-wrap { width: 100%; min-height: 0; padding: 0; grid-template-columns: 1fr; gap: 12px; }
+  .sidebar { height: auto; max-height: none; position: static; padding: 9px 12px; overflow: hidden; border-radius: 0; }
+  .content { padding: 0 12px 24px; }
   .member { display: none; }
   .sidebar nav { display: flex; overflow-x: auto; gap: 5px; }
   .sidebar nav button { width: auto; flex: 0 0 auto; padding: 10px; font-size: 11px; }
@@ -692,7 +775,7 @@ function sendCustomerMessage(order: OrderRecord) {
   :deep(.product-grid) { gap: 8px; }
   :deep(.product-copy) { padding: 0 8px 10px; }
   :deep(.product-copy h3) { font-size: 11px; }
-  .profile-card { align-items: flex-start; }
+  .profile-card { align-items: flex-start; padding-top: 68px; }
   .profile-details { grid-template-columns: 1fr; gap: 14px; }
 }
 </style>

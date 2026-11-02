@@ -6,10 +6,18 @@
         <span><b>PRE-LOVED</b><small>RIDER PORTAL</small></span>
       </a>
       <div class="rider-account">
-        <button class="rider-profile-button" type="button" aria-label="Edit rider profile" @click="openProfile">
-          <ion-icon :icon="personCircleOutline" /><span>{{ rider.name }}</span>
-        </button>
-        <button type="button" @click="$emit('logout')">Log out</button>
+        <div class="rider-account-menu">
+          <button class="rider-profile-button" type="button" aria-label="Rider account menu" :aria-expanded="accountMenuOpen" @click="accountMenuOpen = !accountMenuOpen">
+            <img v-if="rider.avatar" class="rider-header-avatar" :src="rider.avatar" alt="" />
+            <ion-icon v-else :icon="personCircleOutline" />
+            <span>{{ rider.name }}</span>
+          </button>
+          <div v-if="accountMenuOpen" class="account-menu">
+            <div class="account-info"><b>{{ rider.name }}</b><small>{{ rider.email }}</small><span>Rider account</span></div>
+            <button type="button" @click="openProfile">Edit profile</button>
+            <button type="button" @click="accountMenuOpen = false; $emit('logout')">Log out</button>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -18,6 +26,15 @@
         <button class="profile-close" type="button" aria-label="Close profile editor" @click="profileOpen = false">×</button>
         <span class="eyebrow">ACCOUNT SETTINGS</span>
         <h2 id="rider-profile-title">Rider profile</h2>
+        <div class="rider-edit-photo">
+          <span class="rider-edit-avatar">
+            <img v-if="profileDraft.avatar" :src="profileDraft.avatar" alt="Rider profile photo preview" />
+            <template v-else>{{ (profileDraft.name || rider.name).charAt(0).toUpperCase() }}</template>
+          </span>
+          <input ref="profilePhotoInput" class="rider-photo-input" type="file" accept="image/png,image/jpeg,image/webp" @change="handleProfilePhoto" />
+          <button type="button" class="profile-photo-button" @click="profilePhotoInput?.click()">Upload profile photo</button>
+          <button v-if="profileDraft.avatar" type="button" class="profile-photo-remove" @click="profileDraft.avatar = ''">Remove photo</button>
+        </div>
         <form class="profile-form" @submit.prevent="saveProfile">
           <label>Full name<input v-model.trim="profileDraft.name" required maxlength="80" autocomplete="name" /></label>
           <label>Phone number<input v-model.trim="profileDraft.phone" type="tel" autocomplete="tel" placeholder="09xx xxx xxxx" /></label>
@@ -62,14 +79,19 @@
           </header>
 
           <div class="customer-contact">
-            <div class="contact-copy"><span>Customer</span><b>{{ order.customerName || 'Customer' }}</b></div>
-            <a v-if="order.customerPhone" class="contact-action" :href="`tel:${order.customerPhone}`">Call customer</a>
+            <div class="contact-copy">
+              <span>Customer</span>
+              <b>{{ order.customerName || 'Customer' }}</b>
+              <small>{{ order.customerPhone || 'Customer phone number not provided.' }}</small>
+            </div>
           </div>
 
           <section class="customer-location">
-            <span class="section-label">DELIVERY LOCATION</span>
+            <span class="section-label">CUSTOMER DELIVERY ADDRESS</span>
             <p>{{ order.customerAddress || 'Customer address was not provided.' }}</p>
-            <a v-if="order.customerAddress" :href="mapUrl(order.customerAddress)" target="_blank" rel="noopener noreferrer">Open directions</a>
+            <a v-if="order.customerAddress" class="directions-logo" :href="mapUrl(order.customerAddress)" target="_blank" rel="noopener noreferrer" aria-label="Open directions" title="Open directions">
+              <ion-icon :icon="locationOutline" aria-hidden="true" />
+            </a>
           </section>
 
           <section class="delivery-products">
@@ -123,17 +145,17 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { IonIcon } from '@ionic/vue'
-import { personCircleOutline } from 'ionicons/icons'
+import { locationOutline, personCircleOutline } from 'ionicons/icons'
 import type { OrderMessage, OrderRecord } from '../data/mockData'
 
 const props = defineProps<{
-  rider: { name: string; email: string; phone?: string }
+  rider: { name: string; email: string; phone?: string; avatar?: string }
   orders: OrderRecord[]
 }>()
 const emit = defineEmits<{
   (event: 'storefront'): void
   (event: 'logout'): void
-  (event: 'profile-update', rider: { name: string; email: string; phone?: string }): void
+  (event: 'profile-update', rider: { name: string; email: string; phone?: string; avatar?: string }): void
   (event: 'order-update', id: string, patch: Partial<OrderRecord>): void
   (event: 'message', id: string, message: OrderMessage): void
 }>()
@@ -142,11 +164,16 @@ const tab = ref<'active' | 'history'>('active')
 const drafts = reactive<Record<string, string>>({})
 const errors = reactive<Record<string, string>>({})
 const profileOpen = ref(false)
-const profileDraft = reactive({ name: props.rider.name, phone: props.rider.phone || '' })
+const accountMenuOpen = ref(false)
+const profileDraft = reactive({ name: props.rider.name, phone: props.rider.phone || '', avatar: props.rider.avatar || '' })
 const profileError = ref('')
+const profilePhotoInput = ref<HTMLInputElement | null>(null)
 const fallbackImage = '/assets/deal.png'
 const firstName = computed(() => props.rider.name.trim().split(/\s+/)[0] || 'Rider')
-const assignedOrders = computed(() => props.orders.filter(order => order.rider?.trim().toLowerCase() === props.rider.name.trim().toLowerCase()))
+const assignedOrders = computed(() => props.orders.filter(order => {
+  if (order.riderEmail?.trim()) return order.riderEmail.trim().toLowerCase() === props.rider.email.trim().toLowerCase()
+  return order.rider?.trim().toLowerCase() === props.rider.name.trim().toLowerCase()
+}))
 const activeOrders = computed(() => assignedOrders.value.filter(order => order.status !== 'Delivered' && order.status !== 'Cancelled'))
 const historyOrders = computed(() => assignedOrders.value.filter(order => order.status === 'Delivered').sort((a, b) => Date.parse(b.deliveryCompletedAt || b.date) - Date.parse(a.deliveryCompletedAt || a.date)))
 const visibleOrders = computed(() => tab.value === 'active' ? activeOrders.value : historyOrders.value)
@@ -178,8 +205,10 @@ function sendMessage(order: OrderRecord) {
   drafts[order.id] = ''
 }
 function openProfile() {
+  accountMenuOpen.value = false
   profileDraft.name = props.rider.name
   profileDraft.phone = props.rider.phone || ''
+  profileDraft.avatar = props.rider.avatar || ''
   profileError.value = ''
   profileOpen.value = true
 }
@@ -189,9 +218,36 @@ function saveProfile() {
     profileError.value = 'Enter your name to save your profile.'
     return
   }
-  emit('profile-update', { name, email: props.rider.email, phone: profileDraft.phone.trim() })
+  emit('profile-update', { name, email: props.rider.email, phone: profileDraft.phone.trim(), avatar: profileDraft.avatar || undefined })
   profileOpen.value = false
   profileError.value = ''
+}
+function handleProfilePhoto(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  profileError.value = ''
+  if (!file) return
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+    profileError.value = 'Choose a PNG, JPG, or WebP image.'
+    input.value = ''
+    return
+  }
+  if (file.size > 1024 * 1024) {
+    profileError.value = 'Choose an image smaller than 1 MB.'
+    input.value = ''
+    return
+  }
+  const reader = new FileReader()
+  reader.onload = () => {
+    if (typeof reader.result !== 'string') {
+      profileError.value = 'Unable to read this image. Please try another file.'
+      return
+    }
+    profileDraft.avatar = reader.result
+  }
+  reader.onerror = () => { profileError.value = 'Unable to read this image. Please try another file.' }
+  reader.readAsDataURL(file)
+  input.value = ''
 }
 async function readProof(order: OrderRecord, event: Event) {
   errors[order.id] = ''
@@ -257,13 +313,27 @@ function formatDateTime(value: string) {
 .rider-brand b { color: #442f2b; font: 700 17px var(--font-head); }
 .rider-brand small { color: #8e756d; font-size: 9px; font-weight: 700; letter-spacing: .2em; }
 .rider-account { display: flex; align-items: center; gap: 10px; color: #644f47; font-size: 13px; }
-.rider-account button, .contact-action, .customer-location a { padding: 8px 12px; border: 1px solid #eadfd9; border-radius: 10px; background: #fff; color: var(--coral-dark); cursor: pointer; text-decoration: none; font: 700 11px var(--font-body); }
+.rider-account-menu { position: relative; }
+.rider-account button, .customer-location a { padding: 8px 12px; border: 1px solid #eadfd9; border-radius: 10px; background: #fff; color: var(--coral-dark); cursor: pointer; text-decoration: none; font: 700 11px var(--font-body); }
 .rider-account .rider-profile-button { display: inline-flex; align-items: center; gap: 6px; border-color: transparent; background: transparent; color: #644f47; font: 600 12px var(--font-body); }
 .rider-profile-button ion-icon { font-size: 25px; color: var(--coral-dark); }
+.rider-profile-button .rider-header-avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+.account-menu { position: absolute; z-index: 20; top: calc(100% + 10px); right: 0; width: 220px; padding: 9px; display: grid; gap: 4px; border: 1px solid #f0e6e0; border-radius: 14px; background: #fff; box-shadow: 0 14px 35px #39231f1c; }
+.account-menu .account-info { padding: 8px; display: grid; gap: 4px; border-bottom: 1px solid #f2ebe6; }
+.account-info b { color: #493832; font-size: 12px; }
+.account-info small, .account-info span { overflow: hidden; color: #927d75; font-size: 10px; text-overflow: ellipsis; }
+.account-menu > button { padding: 9px; border: 0; border-radius: 8px; background: transparent; color: #644f47; text-align: left; }
+.account-menu > button:hover { background: #fff5f2; }
 .profile-overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; background: #2e201f70; }
 .profile-dialog { position: relative; width: min(420px, 100%); padding: 25px; border: 1px solid #f0e6e0; border-radius: 20px; background: #fff; box-shadow: 0 24px 70px #39231f30; }
 .profile-close { position: absolute; top: 12px; right: 14px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: #fbf3f0; color: #705f58; cursor: pointer; font-size: 22px; }
 .profile-dialog h2 { margin: 6px 0 18px; color: #3e2e2a; font: 700 24px var(--font-head); }
+.rider-edit-photo { display: flex; align-items: center; gap: 12px; margin: -4px 0 16px; }
+.rider-edit-avatar { width: 54px; height: 54px; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: #f9e2df; color: var(--coral-dark); font-size: 20px; font-weight: 700; }
+.rider-edit-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.rider-photo-input { display: none; }
+.profile-photo-button, .profile-photo-remove { padding: 8px 10px; border: 1px solid #eadfd9; border-radius: 9px; background: #fff; color: var(--coral-dark); cursor: pointer; font: 700 10px var(--font-body); }
+.profile-photo-remove { color: #705f58; }
 .profile-form { display: grid; gap: 14px; }
 .profile-form label { display: grid; gap: 6px; color: #705f58; font-size: 11px; font-weight: 700; }
 .profile-form input { width: 100%; min-height: 42px; padding: 0 12px; border: 1px solid #eadfd9; border-radius: 11px; outline: none; color: #493832; font: 13px var(--font-body); }
@@ -302,9 +372,11 @@ function formatDateTime(value: string) {
 .contact-copy { display: grid; gap: 5px; }
 .contact-copy span { color: var(--muted); font-size: 10px; }
 .contact-copy b { color: #493832; font-size: 13px; }
+.contact-copy small { color: var(--muted); font-size: 11px; }
 .customer-location, .delivery-products, .delivery-proof, .message-section { display: grid; gap: 9px; }
 .customer-location p, .delivery-proof > p { margin: 0; color: #5a4943; font-size: 12px; line-height: 1.5; }
-.customer-location a { width: fit-content; }
+.customer-location .directions-logo { width: 40px; height: 40px; padding: 0; display: grid; place-items: center; border-radius: 50%; color: var(--coral-dark); font-size: 20px; }
+.customer-location .directions-logo:hover { background: #fff5f2; border-color: #e8c9c1; }
 .delivery-products { gap: 7px; }
 .delivery-item { min-width: 0; padding: 8px; display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 1px solid #f2ebe6; border-radius: 12px; }
 .delivery-item img { width: 46px; height: 46px; padding: 4px; border-radius: 10px; background: #f8e4d7; object-fit: contain; }

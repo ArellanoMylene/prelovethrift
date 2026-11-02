@@ -1,28 +1,22 @@
 <template>
   <section class="seller-page">
     <header class="seller-header">
-      <a class="seller-brand" @click="$emit('navigate', 'top')">
+      <div class="seller-brand">
         <img src="/assets/logo.png" alt="" />
         <span><b>PRE-LOVED</b><small>THRIFT</small></span>
-      </a>
-      <nav class="store-nav" aria-label="Storefront navigation">
-        <button v-for="item in storeNav" :key="item.id" @click="$emit('navigate', item.id)">{{ item.label }}</button>
-      </nav>
+      </div>
       <div class="header-actions">
-        <button class="ask-button" @click="$emit('open-chat')"><ion-icon :icon="sparklesOutline" /> Ask AI</button>
-        <button class="header-icon" aria-label="Search" @click="$emit('open-search')"><ion-icon :icon="searchOutline" /></button>
         <div class="seller-account">
           <button class="header-icon account-button" aria-label="Seller account" :aria-expanded="accountMenuOpen" @click="accountMenuOpen = !accountMenuOpen">
-            <ion-icon :icon="personOutline" />
+            <img v-if="user.avatar" :src="user.avatar" alt="" />
+            <span v-else>{{ user.name.charAt(0).toUpperCase() }}</span>
           </button>
           <div v-if="accountMenuOpen" class="account-menu">
             <div class="account-info"><b>{{ user.name }}</b><small>{{ user.email }}</small><span>Seller account</span></div>
-            <button @click="accountMenuOpen = false; $emit('storefront')">View storefront</button>
+            <button @click="accountMenuOpen = false; tab = 'profile'"><ion-icon :icon="personOutline" /> Profile</button>
             <button @click="accountMenuOpen = false; $emit('logout')">Log out</button>
           </div>
         </div>
-        <button class="header-icon" aria-label="Favorites" @click="$emit('navigate', 'shop'); $emit('open-wish')"><ion-icon :icon="heartOutline" /></button>
-        <button class="header-icon" aria-label="Shopping bag" @click="$emit('navigate', 'shop'); $emit('open-cart')"><ion-icon :icon="bagHandleOutline" /></button>
       </div>
     </header>
 
@@ -33,7 +27,6 @@
           <ion-icon :icon="item.icon" /><span>{{ item.label }}</span>
           <small v-if="item.id === 'alerts' && lowStock.length">{{ lowStock.length }}</small>
         </button>
-        <div class="sidebar-note"><span class="status-dot"></span><span>Seller workspace<br /><b>Local demo data</b></span></div>
       </aside>
 
       <main class="seller-content">
@@ -73,7 +66,7 @@
           <section class="panel recent-orders">
             <div class="panel-title"><div><span class="eyebrow">LATEST ACTIVITY</span><h2>Recent orders</h2></div>
               <button class="text-button" @click="tab = 'orders'">All orders</button></div>
-            <OrdersTable v-if="orders.length" :orders="orders.slice(0, 5)" @status-change="updateOrderStatus" @rider-change="updateOrderRider" />
+            <OrdersTable v-if="orders.length" :orders="orders.slice(0, 5)" :riders="props.riders" @status-change="updateOrderStatus" @rider-change="updateOrderRider" />
             <div v-else class="empty-note">No orders yet. Orders placed from the storefront will appear here.</div>
           </section>
         </template>
@@ -119,12 +112,12 @@
         </template>
 
         <template v-else-if="tab === 'orders'">
+          <div class="order-processing-heading">
+            <h2>Order processing</h2>
+            <p>Confirm orders, assign a delivery rider, and update fulfilment status. Assigned rider details appear in the customer dashboard after confirmation.</p>
+          </div>
           <section class="panel order-processing-panel">
-            <div class="order-processing-heading">
-              <h2>Order processing</h2>
-              <p>Confirm orders, assign a delivery rider, and update fulfilment status. Assigned rider details appear in the customer dashboard after confirmation.</p>
-            </div>
-            <OrdersTable v-if="orders.length" :orders="orders" @status-change="updateOrderStatus" @rider-change="updateOrderRider" />
+            <OrdersTable v-if="orders.length" :orders="orders" :riders="props.riders" @status-change="updateOrderStatus" @rider-change="updateOrderRider" />
             <div v-else class="empty-note large-empty"><span class="empty-symbol"><ion-icon :icon="receiptOutline" /></span><b>No orders yet</b><p>Customer purchases will appear in this list.</p></div>
           </section>
         </template>
@@ -146,7 +139,7 @@
           </section>
         </template>
 
-        <template v-else>
+        <template v-else-if="tab === 'payments'">
           <div class="page-title"><div><span class="eyebrow">PAYOUTS &amp; SHOP TOOLS</span><h1>Payments &amp; automation</h1>
             <p>Review recorded payment methods and automatic restock activity.</p></div></div>
           <div class="payment-stats">
@@ -163,6 +156,30 @@
             <p class="demo-note">Checkout and payment processing are simulated in this demo. No real payments are collected.</p>
           </section>
         </template>
+
+        <template v-else>
+          <div class="page-title"><div><span class="eyebrow">YOUR ACCOUNT</span><h1>Profile</h1>
+            <p>Update your seller information and profile photo.</p></div></div>
+          <section class="panel seller-profile-panel">
+            <div class="seller-profile-photo">
+              <span class="seller-profile-avatar">
+                <img v-if="profileDraft.avatar" :src="profileDraft.avatar" alt="Seller profile photo" />
+                <template v-else>{{ profileDraft.name.charAt(0).toUpperCase() }}</template>
+              </span>
+              <input ref="profilePhotoInput" class="profile-photo-input" type="file" accept="image/png,image/jpeg,image/webp" @change="handleProfilePhoto" />
+              <button class="text-button" type="button" @click="profilePhotoInput?.click()">Upload profile photo</button>
+              <button v-if="profileDraft.avatar" class="remove-photo" type="button" @click="profileDraft.avatar = ''">Remove photo</button>
+            </div>
+            <form class="seller-profile-form" @submit.prevent="saveProfile">
+              <label>Seller name<input v-model.trim="profileDraft.name" required maxlength="80" autocomplete="name" /></label>
+              <label>Email address<input :value="user.email" type="email" readonly /></label>
+              <label>Phone number<input v-model.trim="profileDraft.phone" type="tel" autocomplete="tel" placeholder="09xx xxx xxxx" /></label>
+              <label>Address<input v-model.trim="profileDraft.address" autocomplete="street-address" placeholder="Shop or business address" /></label>
+              <p v-if="profileError" class="form-error" role="alert">{{ profileError }}</p>
+              <button class="primary-button submit-button" type="submit">Save profile</button>
+            </form>
+          </section>
+        </template>
       </main>
     </div>
   </section>
@@ -172,8 +189,8 @@
 import { computed, defineComponent, h, onMounted, reactive, ref, watch } from 'vue'
 import { IonIcon, alertController } from '@ionic/vue'
 import {
-  addOutline, alertCircleOutline, bagHandleOutline, checkmarkCircleOutline, cubeOutline, gridOutline,
-  heartOutline, personOutline, receiptOutline, refreshOutline, searchOutline, sparklesOutline, storefrontOutline,
+  addOutline, alertCircleOutline, checkmarkCircleOutline, cubeOutline, gridOutline,
+  personOutline, receiptOutline, refreshOutline, searchOutline,
   trashOutline, walletOutline
 } from 'ionicons/icons'
 import { categories as shopCategories, products as shopProducts, type CartItem, type SellerOrderRecord } from '../data/mockData'
@@ -200,23 +217,33 @@ interface Activity {
   icon: string
 }
 
-const props = defineProps<{ user: { name: string; email: string }; orders: SellerOrderRecord[] }>()
+type RiderAccount = { name: string; email: string; phone?: string }
+const props = defineProps<{ user: { name: string; email: string; phone?: string; address?: string; avatar?: string }; orders: SellerOrderRecord[]; riders: RiderAccount[] }>()
 const emit = defineEmits<{
-  (event: 'storefront'): void
   (event: 'logout'): void
-  (event: 'navigate', id: string): void
-  (event: 'open-chat'): void
-  (event: 'open-search'): void
-  (event: 'open-wish'): void
-  (event: 'open-cart'): void
+  (event: 'profile-update', user: { name: string; email: string; phone?: string; address?: string; avatar?: string }): void
   (event: 'status-change', id: string, status: string): void
-  (event: 'rider-change', id: string, rider: string): void
+  (event: 'rider-change', id: string, rider: RiderAccount): void
 }>()
 const storageKey = computed(() => `pl_seller_inventory_${props.user.email.toLowerCase()}`)
 const activityKey = computed(() => `pl_seller_activity_${props.user.email.toLowerCase()}`)
 const fallbackImage = '/assets/deal.png'
 const tab = ref('inventory')
 const accountMenuOpen = ref(false)
+const profilePhotoInput = ref<HTMLInputElement | null>(null)
+const profileError = ref('')
+const profileDraft = reactive({
+  name: props.user.name,
+  phone: props.user.phone || '',
+  address: props.user.address || '',
+  avatar: props.user.avatar || ''
+})
+watch(() => props.user, (user) => {
+  profileDraft.name = user.name
+  profileDraft.phone = user.phone || ''
+  profileDraft.address = user.address || ''
+  profileDraft.avatar = user.avatar || ''
+}, { deep: true })
 const inventory = ref<InventoryProduct[]>([])
 const inventoryQuery = ref('')
 const formError = ref('')
@@ -224,19 +251,13 @@ const photo = ref('')
 const restockAmounts = reactive<Record<string, number>>({})
 const automationLog = ref<Activity[]>([])
 const categories = shopCategories.map((category) => category.name)
-const storeNav = [
-  { id: 'top', label: 'Home' },
-  { id: 'shop', label: 'Shop' },
-  { id: 'stylist', label: 'Outfit Builder' },
-  { id: 'deals', label: 'Deals' },
-  { id: 'contact', label: 'Contact' }
-]
 const navItems = [
   { id: 'overview', label: 'Overview', icon: gridOutline },
   { id: 'inventory', label: 'Products & inventory', icon: cubeOutline },
   { id: 'orders', label: 'Orders', icon: receiptOutline },
   { id: 'alerts', label: 'Reorder alerts', icon: alertCircleOutline },
-  { id: 'payments', label: 'Payments & automation', icon: walletOutline }
+  { id: 'payments', label: 'Payments & automation', icon: walletOutline },
+  { id: 'profile', label: 'Profile', icon: personOutline }
 ]
 const form = reactive({ name: '', category: categories[0], type: 'Clothing', price: 0, stock: 0, reorderPoint: 3, color: '' })
 const orders = computed(() => props.orders)
@@ -279,7 +300,10 @@ const paymentTotals = computed(() => {
 })
 
 const OrdersTable = defineComponent({
-  props: { orders: { type: Array as () => SellerOrderRecord[], required: true } },
+  props: {
+    orders: { type: Array as () => SellerOrderRecord[], required: true },
+    riders: { type: Array as () => RiderAccount[], required: true }
+  },
   emits: ['status-change', 'rider-change'],
   setup(tableProps, { emit: emitTable }) {
     const riderDrafts = reactive<Record<string, string>>({})
@@ -302,28 +326,39 @@ const OrdersTable = defineComponent({
           h('td', { class: 'order-payment' }, [
             h('span', order.payment === 'Unspecified' ? 'Not recorded' : order.payment),
             h('small', {
-              class: order.payment === 'GCash' || order.payment.startsWith('Card') ? 'payment-paid' : 'payment-pending'
-            }, order.payment === 'GCash' || order.payment.startsWith('Card') ? 'Paid' : order.payment === 'Cash on delivery' ? 'On delivery' : 'Pending')
+              class: order.payment.startsWith('Card') ? 'payment-paid' : 'payment-pending'
+            }, order.payment === 'GCash' ? order.paymentProof ? 'Awaiting verification' : 'Proof missing' : order.payment.startsWith('Card') ? 'Paid' : order.payment === 'Cash on delivery' ? 'On delivery' : 'Pending'),
+            ...(order.paymentProof ? [h('a', {
+              href: order.paymentProof,
+              target: '_blank',
+              rel: 'noopener noreferrer'
+            }, 'Review proof')] : [])
           ]),
           h('td', { class: 'order-rider' }, [
             h('div', { class: 'rider-assignment' }, [
-              h('input', {
-                value: riderDrafts[order.id] ?? order.rider ?? '',
-                placeholder: 'Rider name',
+              h('select', {
+                value: riderDrafts[order.id] ?? (
+                  order.riderEmail
+                    ? tableProps.riders.find(rider => rider.email.toLowerCase() === order.riderEmail?.toLowerCase())?.email ?? ''
+                    : tableProps.riders.find(rider => rider.name.trim().toLowerCase() === order.rider?.trim().toLowerCase())?.email ?? ''
+                ),
                 'aria-label': `Rider for ${order.id}`,
-                onInput: (event: Event) => { riderDrafts[order.id] = (event.target as HTMLInputElement).value }
-              }),
+                onChange: (event: Event) => { riderDrafts[order.id] = (event.target as HTMLSelectElement).value }
+              }, [
+                h('option', { value: '' }, tableProps.riders.length ? 'Select rider' : 'No riders registered'),
+                ...tableProps.riders.map(rider => h('option', { key: rider.email, value: rider.email }, `${rider.name} · ${rider.email}`))
+              ]),
               h('button', {
                 type: 'button',
-                disabled: !(riderDrafts[order.id] ?? order.rider ?? '').trim(),
+                disabled: !(riderDrafts[order.id] ?? '').trim(),
                 onClick: () => {
-                  const rider = (riderDrafts[order.id] ?? order.rider ?? '').trim()
+                  const rider = tableProps.riders.find(item => item.email === riderDrafts[order.id])
                   if (rider) {
                     emitTable('rider-change', order.id, rider)
                     delete riderDrafts[order.id]
                   }
                 }
-              }, order.rider ? 'Update' : 'Assign')
+              }, order.riderEmail ? 'Update' : 'Assign')
             ])
           ]),
           h('td', { class: 'order-status' }, [h('select', {
@@ -374,15 +409,76 @@ onMounted(() => {
   }
 })
 
+function handleProfilePhoto(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  profileError.value = ''
+  if (!file) return
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+    profileError.value = 'Choose a PNG, JPG, or WebP image.'
+    input.value = ''
+    return
+  }
+  if (file.size > 1024 * 1024) {
+    profileError.value = 'Choose an image smaller than 1 MB.'
+    input.value = ''
+    return
+  }
+  const reader = new FileReader()
+  reader.onload = () => {
+    if (typeof reader.result !== 'string') {
+      profileError.value = 'Unable to read this image. Please try another file.'
+      return
+    }
+    profileDraft.avatar = reader.result
+  }
+  reader.onerror = () => { profileError.value = 'Unable to read this image. Please try another file.' }
+  reader.readAsDataURL(file)
+  input.value = ''
+}
+
+function saveProfile() {
+  profileError.value = ''
+  const updated = {
+    ...props.user,
+    name: profileDraft.name.trim(),
+    phone: profileDraft.phone.trim() || undefined,
+    address: profileDraft.address.trim() || undefined,
+    avatar: profileDraft.avatar || undefined
+  }
+  if (!updated.name) {
+    profileError.value = 'Enter your seller name.'
+    return
+  }
+  try {
+    const savedAccounts = localStorage.getItem('pl_seller_accounts')
+    if (savedAccounts) {
+      const accounts: unknown = JSON.parse(savedAccounts)
+      if (!Array.isArray(accounts)) throw new Error('Stored seller accounts are invalid.')
+      const updatedAccounts = accounts.map((account: unknown) => {
+        if (typeof account !== 'object' || account === null || !('email' in account) || typeof account.email !== 'string') return account
+        if (account.email.toLowerCase() !== updated.email.toLowerCase()) return account
+        return { ...account, name: updated.name, phone: updated.phone, address: updated.address, avatar: updated.avatar }
+      })
+      localStorage.setItem('pl_seller_accounts', JSON.stringify(updatedAccounts))
+    }
+    localStorage.setItem('pl_seller_me', JSON.stringify(updated))
+    emit('profile-update', updated)
+  } catch (error) {
+    console.error('Unable to save seller profile.', error)
+    profileError.value = error instanceof Error ? error.message : 'Unable to save your profile.'
+  }
+}
+
 watch(automationLog, value => localStorage.setItem(activityKey.value, JSON.stringify(value)), { deep: true })
 
 function updateOrderStatus(id: string, status: string) {
   emit('status-change', id, status)
   addActivity('Order status updated', `${id} is now ${status.toLowerCase()}.`)
 }
-function updateOrderRider(id: string, rider: string) {
+function updateOrderRider(id: string, rider: RiderAccount) {
   emit('rider-change', id, rider)
-  addActivity('Delivery rider assigned', `${rider} was assigned to ${id}.`)
+  addActivity('Delivery rider assigned', `${rider.name} was assigned to ${id}.`)
 }
 function restock(product: InventoryProduct) {
   const amount = Math.floor(restockAmounts[product.id] ?? 1)
@@ -471,25 +567,21 @@ function formatTime(value: string) {
 </script>
 
 <style scoped>
-.seller-page { min-height: 100vh; padding: 0 0 60px; background: #fbf9f6; color: var(--ink); }
-.seller-header { position: sticky; top: 0; z-index: 20; min-height: 78px; padding: 10px max(24px, calc((100% - 1240px) / 2)); display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid #f0e6e0; background: rgba(251,249,246,.96); backdrop-filter: blur(10px); }
-.seller-brand { display: flex; align-items: center; gap: 12px; text-decoration: none; cursor: pointer; }
+.seller-page { min-height: 100vh; padding: 0; background: #fbf9f6; color: var(--ink); }
+.seller-header { position: sticky; top: 0; z-index: 20; height: 78px; box-sizing: border-box; padding: 10px 24px 10px 0; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid #f0e6e0; background: rgba(251,249,246,.96); backdrop-filter: blur(10px); }
+.seller-brand { display: flex; align-items: center; gap: 12px; }
 .seller-brand img { width: 48px; height: 48px; object-fit: cover; border-radius: 50%; background: #f7f0eb; }
 .seller-brand span { display: grid; gap: 4px; }
 .seller-brand b { color: #442f2b; font: 700 19px var(--font-head); }
 .seller-brand small { color: #8e756d; font-size: 9px; font-weight: 700; letter-spacing: .28em; }
-.store-nav { display: flex; align-items: center; justify-content: center; gap: clamp(14px, 2.4vw, 34px); }
-.store-nav button { position: relative; padding: 8px 0; border: 0; background: transparent; color: #514641; cursor: pointer; white-space: nowrap; font: 500 13px var(--font-body); }
-.store-nav button::after { position: absolute; right: 0; bottom: 1px; left: 0; height: 2px; background: var(--coral); content: ''; transform: scaleX(0); transition: transform .2s; }
-.store-nav button:hover { color: var(--coral-dark); }
-.store-nav button:hover::after { transform: scaleX(1); }
 .header-actions { display: flex; align-items: center; gap: 7px; }
 .header-actions button { min-width: 38px; min-height: 38px; display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: #403632; cursor: pointer; }
 .header-actions .ask-button { gap: 7px; padding: 0 15px; border-radius: 999px; background: var(--coral-soft); color: var(--coral-dark); white-space: nowrap; font: 700 12px var(--font-body); }
 .header-actions .header-icon { position: relative; width: 38px; border-radius: 50%; font-size: 21px; }
 .header-actions .header-icon:hover { background: var(--coral-soft); color: var(--coral-dark); }
 .seller-account { position: relative; }
-.header-actions .account-button { width: 38px; border-radius: 50%; background: transparent; color: #403632; font-size: 21px; }
+.header-actions .account-button { width: 38px; overflow: hidden; border-radius: 50%; background: #f9e2df; color: var(--coral-dark); font-size: 15px; font-weight: 800; }
+.account-button img { width: 100%; height: 100%; object-fit: cover; }
 .account-menu { position: absolute; top: calc(100% + 10px); right: 0; z-index: 30; width: 220px; padding: 10px; border: 1px solid #f0e6e0; border-radius: 16px; background: #fff; box-shadow: 0 16px 38px #39231f24; }
 .header-actions .account-menu button { width: 100%; min-height: 36px; justify-content: flex-start; padding: 0 10px; border-radius: 9px; color: #584942; font: 600 11px var(--font-body); }
 .header-actions .account-menu button:hover { background: #fbf3f0; }
@@ -499,9 +591,9 @@ function formatTime(value: string) {
 .account-info span { color: var(--coral-dark); font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .primary-button { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 16px; border: 0; border-radius: 12px; background: var(--coral); color: #fff; cursor: pointer; font: 700 12px var(--font-body); box-shadow: 0 8px 18px #c45f5f29; transition: transform .18s, box-shadow .18s; }
 .primary-button:hover { transform: translateY(-1px); box-shadow: 0 8px 18px #c45f5f29; }
-.seller-layout { width: min(1180px, calc(100% - 40px)); margin: 30px auto 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); align-items: start; gap: 24px; }
+.seller-layout { width: 100%; min-height: calc(100vh - 78px); box-sizing: border-box; margin: 0; padding: 0 24px 0 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); align-items: start; gap: 24px; }
 .seller-sidebar, .panel { border: 1px solid #f0e6e0; border-radius: 22px; background: #fff; }
-.seller-sidebar { position: sticky; top: 20px; padding: 16px; }
+.seller-sidebar { position: sticky; top: 78px; height: calc(100vh - 78px); box-sizing: border-box; overflow-y: auto; display: flex; flex-direction: column; align-self: start; padding: 16px; border-radius: 0; }
 .side-label, .eyebrow { color: #a17870; font-size: 9px; font-weight: 800; letter-spacing: .16em; }
 .side-label { display: block; padding: 5px 10px 12px; }
 .seller-sidebar > button { width: 100%; min-height: 44px; margin: 2px 0; padding: 0 11px; display: flex; align-items: center; gap: 11px; border: 0; border-radius: 12px; background: transparent; color: #705f58; cursor: pointer; text-align: left; font: 600 12px var(--font-body); }
@@ -512,11 +604,8 @@ function formatTime(value: string) {
 .seller-sidebar > button:disabled { opacity: 1; cursor: default; }
 .seller-sidebar > button:disabled:not(.active) { color: #705f58; }
 .seller-sidebar > button.active ion-icon { color: var(--coral-dark); }
-.sidebar-note { display: flex; align-items: flex-start; gap: 9px; margin: 18px 4px 2px; padding: 13px 10px; border-top: 1px solid #f1e9e4; color: #9a8880; font-size: 10px; line-height: 1.7; }
-.sidebar-note b { color: #6d5952; font-weight: 600; }
-.status-dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: #68aa79; }
-.seller-content { min-width: 0; display: grid; gap: 18px; }
-.page-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 3px 4px; }
+.seller-content { min-width: 0; display: grid; align-content: start; gap: 18px; }
+.page-title { min-height: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; border: 1px solid #f0d8d4; border-radius: 18px; background: linear-gradient(120deg, #fff1ed, #f8e3df 58%, #f6e8e2); }
 .page-title h1 { margin: 6px 0 5px; color: #3e2e2a; font: 700 28px var(--font-head); }
 .page-title p { margin: 0; max-width: 640px; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
@@ -528,6 +617,19 @@ function formatTime(value: string) {
 .metrics article.warning-metric b { color: #d26451; }
 .overview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .panel { min-width: 0; padding: 20px; }
+.seller-profile-panel { display: grid; grid-template-columns: 180px minmax(0, 1fr); align-items: start; gap: 28px; }
+.seller-profile-photo { display: grid; justify-items: center; gap: 10px; padding: 10px 0; }
+.seller-profile-avatar { width: 116px; height: 116px; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: #f9e2df; color: var(--coral-dark); font: 700 42px var(--font-head); }
+.seller-profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.profile-photo-input { display: none; }
+.remove-photo { border: 0; background: none; color: #a64b45; cursor: pointer; font: 600 11px var(--font-body); }
+.seller-profile-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.seller-profile-form label { display: grid; gap: 7px; color: #705f58; font: 600 11px var(--font-body); }
+.seller-profile-form input { min-width: 0; padding: 12px 13px; border: 1px solid #eadfd8; border-radius: 11px; outline: none; background: #fbf9f6; color: var(--ink); font: 13px var(--font-body); }
+.seller-profile-form input:focus { border-color: var(--coral); }
+.seller-profile-form input[readonly] { color: #93817b; }
+.seller-profile-form .form-error { grid-column: 1 / -1; margin: 0; color: #b5473e; font-size: 11px; }
+.seller-profile-form .submit-button { grid-column: 1 / -1; justify-self: start; }
 .panel-title { min-height: 34px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .panel-title h2 { margin: 5px 0 0; color: #402f2b; font: 700 19px var(--font-head); }
 .panel-title h2 small { color: #99857e; font: 600 12px var(--font-body); }
@@ -582,9 +684,9 @@ function formatTime(value: string) {
 .icon-button:hover { background: #f9e7e4; }
 .empty-cell { padding: 26px !important; color: var(--muted) !important; text-align: center; }
 .order-processing-panel { padding: 24px 25px 20px; border-radius: 25px; }
-.order-processing-heading { margin-bottom: 20px; }
-.order-processing-heading h2 { margin: 0 0 8px; color: #402f2b; font: 700 27px Georgia, serif; }
-.order-processing-heading p { max-width: 1000px; margin: 0; color: var(--muted); font-size: 15px; line-height: 1.55; }
+.order-processing-heading { padding: 16px 20px; border: 1px solid #f0d8d4; border-radius: 18px; background: linear-gradient(120deg, #fff1ed, #f8e3df 58%, #f6e8e2); }
+.order-processing-heading h2 { margin: 0 0 6px; color: #402f2b; font: 700 23px Georgia, serif; }
+.order-processing-heading p { max-width: 900px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 :deep(.orders-table-wrap) { overflow-x: hidden; }
 :deep(.orders-table) { width: 100%; min-width: 0; border-collapse: collapse; text-align: left; table-layout: fixed; }
 :deep(.orders-table th) { padding: 10px 8px; border-bottom: 1px solid #eee5df; color: #927d75; font-size: 12px; font-weight: 500; }
@@ -610,7 +712,7 @@ function formatTime(value: string) {
 :deep(.order-payment .payment-paid) { background: #e3f1e7; color: #39744c; }
 :deep(.order-payment .payment-pending) { background: #f5eee7; color: #826b56; }
 :deep(.rider-assignment) { display: grid; gap: 5px; }
-:deep(.rider-assignment input) { width: 100%; min-width: 0; height: 34px; padding: 0 7px; border: 1px solid #eadfd9; border-radius: 9px; color: var(--ink); font: 500 10px var(--font-body); }
+:deep(.rider-assignment select) { width: 100%; min-width: 0; height: 34px; padding: 0 7px; border: 1px solid #eadfd9; border-radius: 9px; color: var(--ink); font: 500 10px var(--font-body); }
 :deep(.rider-assignment button) { width: fit-content; min-height: 27px; padding: 0 10px; border: 0; border-radius: 8px; background: #f9e2df; color: var(--coral-dark); cursor: pointer; font: 700 10px var(--font-body); }
 :deep(.rider-assignment button:disabled) { opacity: .5; cursor: not-allowed; }
 :deep(.orders-table .order-status) { min-width: 0; }
@@ -641,38 +743,34 @@ function formatTime(value: string) {
 .demo-note { margin: 16px 0 0; padding-top: 12px; border-top: 1px solid #f2ebe6; color: #9b8982; font-size: 10px; line-height: 1.5; }
 @media (max-width: 900px) {
   .seller-layout { grid-template-columns: 190px minmax(0, 1fr); gap: 14px; }
-  .seller-header { gap: 12px; padding-right: 16px; padding-left: 16px; }
-  .store-nav { gap: 12px; }
-  .store-nav button { font-size: 11px; }
+  .seller-header { padding-right: 16px; }
   .metrics, .payment-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .overview-grid { grid-template-columns: 1fr; }
   .inventory-table { min-width: 720px; }
   :deep(.orders-table) { min-width: 0; }
 }
 @media (max-width: 620px) {
-  .seller-header { min-height: 70px; padding: 8px 12px; gap: 8px; flex-wrap: wrap; }
+  .seller-header { height: 70px; padding: 8px 12px 8px 0; gap: 8px; }
   .seller-brand img { width: 42px; height: 42px; }
   .seller-brand b { font-size: 16px; }
   .seller-brand small { font-size: 8px; }
-  .store-nav { width: 100%; order: 3; justify-content: flex-start; gap: 20px; overflow-x: auto; scrollbar-width: none; }
-  .store-nav::-webkit-scrollbar { display: none; }
-  .store-nav button { flex: 0 0 auto; padding: 7px 0 9px; font-size: 11px; }
   .header-actions { gap: 2px; }
-  .header-actions .ask-button { width: 36px; min-width: 36px; overflow: hidden; padding: 0; font-size: 0; }
-  .header-actions .ask-button ion-icon { flex: 0 0 auto; font-size: 18px; }
   .header-actions .header-icon, .header-actions .account-button { width: 32px; min-width: 32px; min-height: 32px; font-size: 18px; }
-  .seller-layout { width: calc(100% - 24px); margin-top: 14px; grid-template-columns: 1fr; gap: 12px; }
-  .seller-sidebar { position: static; padding: 9px; overflow: hidden; }
-  .side-label, .sidebar-note { display: none; }
+  .seller-layout { width: 100%; min-height: calc(100vh - 70px); margin: 0; padding: 0; grid-template-columns: 1fr; gap: 12px; }
+  .seller-sidebar { position: static; height: auto; max-height: none; padding: 9px; overflow: hidden; border-radius: 22px; }
+  .side-label { display: none; }
   .seller-sidebar nav { display: flex; overflow-x: auto; gap: 4px; }
   .seller-sidebar > button { width: auto; min-height: 36px; flex: 0 0 auto; gap: 6px; padding: 0 9px; font-size: 10px; }
   .seller-sidebar > button ion-icon { font-size: 15px; }
+  .seller-profile-panel { grid-template-columns: 1fr; gap: 16px; }
+  .seller-profile-form { grid-template-columns: 1fr; }
   .seller-content { gap: 12px; }
-  .page-title { align-items: flex-start; flex-direction: column; }
+  .page-title { min-height: 0; align-items: flex-start; flex-direction: column; padding: 16px; border-radius: 17px; }
   .page-title h1 { font-size: 24px; }
   .page-title p { font-size: 11px; }
   .panel { padding: 15px; border-radius: 17px; }
-  .order-processing-panel { padding: 18px 14px; }
+  .order-processing-heading { padding: 16px; border-radius: 17px; }
+  .order-processing-panel { padding: 16px 14px; }
   .order-processing-heading h2 { font-size: 23px; }
   .order-processing-heading p { font-size: 12px; }
   .product-form { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }

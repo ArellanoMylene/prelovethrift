@@ -37,6 +37,7 @@
               <img :src="it.img" :alt="it.name" />
               <div class="item-copy">
                 <b>{{ it.name }}</b>
+                <span v-if="it.size" class="item-size">Size: {{ it.size }}</span>
                 <div class="price-row"><span class="price">{{ formatPeso(it.price) }}</span></div>
                 <div class="qty-box" aria-label="Quantity selector">
                   <button type="button" aria-label="Decrease quantity">−</button>
@@ -49,7 +50,7 @@
                     <span>Size</span>
                     <select v-model="size">
                       <option value="">Select size</option>
-                      <option v-for="option in sizes" :key="option" :value="option">{{ option }}</option>
+                      <option v-for="option in sizesFor(it)" :key="option" :value="option">{{ option }}</option>
                     </select>
                   </label>
                   <label>
@@ -125,10 +126,6 @@
                     <input v-model="payment" type="radio" value="GCash" />
                     <span>GCash</span>
                   </label>
-                  <label :class="{ active: payment === 'Card' }">
-                    <input v-model="payment" type="radio" value="Card" />
-                    <span>Card</span>
-                  </label>
                   <label :class="{ active: payment === 'Cash on delivery' }">
                     <input v-model="payment" type="radio" value="Cash on delivery" />
                     <span>Cash on delivery</span>
@@ -139,29 +136,24 @@
                   <img
                     :class="gcashQrReady ? 'gcash-qr-image' : 'gcash-qr-probe'"
                     :src="gcashQrUrl"
-                    alt="Official GCash payment QR code"
+                    alt="GCash payment QR code"
                     @load="gcashQrReady = true"
                     @error="gcashQrReady = false"
                   />
                   <div v-if="!gcashQrReady" class="gcash-qr-placeholder" role="status">
-                    <span>Official GCash QR will appear here</span>
+                    <span>GCash QR is unavailable</span>
                   </div>
-                  <small v-if="gcashQrReady">Scan with GCash, then place your order. The seller must verify the transfer manually before confirming your order.</small>
-                  <small v-else>GCash checkout is unavailable until the official QR image is added. After payment, the seller must verify the transfer manually.</small>
-                </div>
-                <div v-else-if="payment === 'Card'" class="payment-demo-details">
-                  <strong>Choose card type</strong>
-                  <div class="card-type-options">
-                    <label :class="{ active: cardType === 'Visa' }">
-                      <input v-model="cardType" type="radio" value="Visa" />
-                      <span>Visa</span>
-                    </label>
-                    <label :class="{ active: cardType === 'Mastercard' }">
-                      <input v-model="cardType" type="radio" value="Mastercard" />
-                      <span>Mastercard</span>
-                    </label>
+                  <small v-if="gcashQrReady">Scan this QR with GCash, then upload your payment receipt. The seller will verify your transfer.</small>
+                  <small v-else>GCash checkout is unavailable because the QR image could not be loaded.</small>
+                  <label class="proof-upload" for="gcash-payment-proof">
+                    <span>Upload payment proof <small>Required · image up to 1 MB</small></span>
+                    <input id="gcash-payment-proof" type="file" accept="image/jpeg,image/png,image/webp" @change="handleProofUpload" />
+                  </label>
+                  <div v-if="paymentProof" class="proof-file">
+                    <p class="proof-file-name">{{ proofFileName }}</p>
+                    <button class="remove-proof" type="button" aria-label="Remove uploaded proof" @click="clearProof">×</button>
                   </div>
-                  <small>Demo only. Card details are not requested and no payment will be charged.</small>
+                  <p v-if="proofError" class="delivery-error" role="alert">{{ proofError }}</p>
                 </div>
               </div>
 
@@ -172,8 +164,13 @@
                 <strong>₱{{ totalPeso.toLocaleString('en-PH') }}</strong>
               </div>
 
-              <button class="pay-btn" type="button" :disabled="payment === 'GCash' && !gcashQrReady" @click="submitOrder">
-                {{ payment === 'GCash' && !gcashQrReady ? 'GCash QR not available' : payment === 'Card' ? 'Place demo order' : 'Place order' }}
+              <button
+                class="pay-btn"
+                type="button"
+                :disabled="payment === 'GCash' && (!gcashQrReady || !paymentProof)"
+                @click="submitOrder"
+              >
+                {{ payment === 'GCash' && !gcashQrReady ? 'GCash QR not available' : payment === 'GCash' && !paymentProof ? 'Upload proof to continue' : 'Place order' }}
               </button>
             </div>
           </div>
@@ -188,7 +185,7 @@
 import { ref, computed, watch } from 'vue'
 import { IonModal, IonIcon } from '@ionic/vue'
 import { closeOutline, trashOutline, bagHandle, bagHandleOutline, createOutline, checkmarkCircle, ellipseOutline } from 'ionicons/icons'
-import type { CartItem } from '../data/mockData'
+import { getProductSizes, type CartItem } from '../data/mockData'
 import { formatPeso, toPeso } from '../utils/currency'
 
 const props = defineProps<{
@@ -200,7 +197,7 @@ const emit = defineEmits<{
   (e: 'close'): void
   (e: 'open-dashboard'): void
   (e: 'remove', id: CartItem['id']): void
-  (e: 'checkout', payload: { orderId: string; payment: string; total: number; customerName: string; customerEmail: string; customerPhone: string; customerAddress: string }): void
+  (e: 'checkout', payload: { orderId: string; payment: string; total: number; customerName: string; customerEmail: string; customerPhone: string; customerAddress: string; paymentProof?: string }): void
   (e: 'edit', payload: { id: CartItem['id']; size?: string; note?: string }): void
   (e: 'toggle', id: CartItem['id']): void
   (e: 'toggle-all', value: boolean): void
@@ -215,26 +212,31 @@ const shippingPrice = 4.5
 const totalPeso = computed(() => toPeso(total.value))
 const allSelected = computed(() => props.items.length > 0 && selectedCount.value === props.items.length)
 
-const sizes = ['XS', 'S', 'M', 'L', 'XL']
+const sizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+const sizesFor = (item: CartItem) => getProductSizes(item).length ? getProductSizes(item) : sizes
 const editingId = ref<CartItem['id'] | null>(null)
 const size = ref(''), note = ref('')
 const stage = ref<'cart' | 'checkout' | 'success'>('cart')
 const fullName = ref(''), phone = ref(''), address = ref(''), payment = ref('GCash')
-const cardType = ref('Visa')
 const gcashQrUrl = '/assets/gcash-qr.png'
 const gcashQrReady = ref(false)
+const paymentProof = ref('')
+const proofFileName = ref('')
+const proofError = ref('')
 const deliveryError = ref('')
 const orderId = ref('PL-1004')
 
-watch(() => props.user, (user) => {
-  if (!user) return
-  fullName.value = user.name || fullName.value
-  phone.value = user.phone || phone.value
-  address.value = user.address || address.value
+watch(() => [props.user?.name, props.user?.phone, props.user?.address], ([name, userPhone, userAddress]) => {
+  fullName.value = name || ''
+  phone.value = userPhone || ''
+  address.value = userAddress || ''
 }, { immediate: true })
 
 function beginCheckout() {
   if (!selectedCount.value) return
+  fullName.value = props.user?.name || ''
+  phone.value = props.user?.phone || ''
+  address.value = props.user?.address || ''
   stage.value = 'checkout'
 }
 function closeCheckout() {
@@ -251,24 +253,66 @@ function save(it: CartItem) {
   emit('edit', { id: it.id, size: size.value || undefined, note: note.value.trim() || undefined })
   editingId.value = null
 }
+function handleProofUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  paymentProof.value = ''
+  proofFileName.value = ''
+  proofError.value = ''
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    proofError.value = 'Choose a JPG, PNG, or WebP image for your payment proof.'
+    input.value = ''
+    return
+  }
+  if (file.size > 1024 * 1024) {
+    proofError.value = 'Payment proof must be 1 MB or smaller.'
+    input.value = ''
+    return
+  }
+
+  const reader = new FileReader()
+  reader.onload = () => {
+    if (typeof reader.result !== 'string') {
+      proofError.value = 'Unable to read this image. Please choose another file.'
+      return
+    }
+    paymentProof.value = reader.result
+    proofFileName.value = file.name
+  }
+  reader.onerror = () => {
+    proofError.value = 'Unable to read this image. Please choose another file.'
+  }
+  reader.readAsDataURL(file)
+}
+function clearProof() {
+  paymentProof.value = ''
+  proofFileName.value = ''
+  proofError.value = ''
+}
 function submitOrder() {
   deliveryError.value = ''
   if (!fullName.value.trim() || !address.value.trim()) {
     deliveryError.value = 'Enter the recipient name and delivery address to continue.'
     return
   }
+  if (payment.value === 'GCash' && !paymentProof.value) {
+    proofError.value = 'Upload your GCash payment proof to continue.'
+    return
+  }
   orderId.value = `PL-${Math.floor(1000 + Math.random() * 9000)}`
-  const paymentMethod = payment.value === 'Card' ? `Card (${cardType.value})` : payment.value
   emit('checkout', {
     orderId: orderId.value,
-    payment: paymentMethod,
+    payment: payment.value,
     total: totalPeso.value,
     customerName: fullName.value.trim(),
     customerEmail: props.user?.email || '',
     customerPhone: phone.value.trim(),
-    customerAddress: address.value.trim()
+    customerAddress: address.value.trim(),
+    paymentProof: payment.value === 'GCash' ? paymentProof.value : undefined
   })
-  emit('order-placed', { orderId: orderId.value, payment: paymentMethod, total: totalPeso.value })
+  emit('order-placed', { orderId: orderId.value, payment: payment.value, total: totalPeso.value })
   stage.value = 'cart'
   emit('close')
 }
@@ -520,6 +564,12 @@ ion-modal.cart-modal::part(content) {
   font-weight: 700;
   line-height: 1.25;
 }
+.item-size {
+  color: #66544f;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
 .price-row {
   display: flex;
   align-items: center;
@@ -738,7 +788,8 @@ ion-modal.cart-modal::part(content) {
   .price { font-size: 13px; }
   .qty-box button { width: 20px; height: 21px; font-size: 14px; }
   .qty-box span { min-width: 18px; font-size: 12px; }
-  .right-actions { gap: 3px; min-width: 32px; margin-left: 0; }
+  .right-actions { gap: 3px; min-width: 32px; margin-left: 0; transform: translateX(-56px); }
+  .item-copy { padding-right: 50px; }
   .mini-icon, .trash { width: 23px; height: 23px; }
   .mini-icon ion-icon, .trash ion-icon { font-size: 13px; }
   .summary-box { margin-top: 5px; padding-top: 5px; }
@@ -948,6 +999,56 @@ ion-modal.cart-modal::part(content) {
   font-size: 11px;
   line-height: 1.4;
 }
+.proof-upload {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.62);
+  border-radius: 10px;
+  background: rgba(255,255,255,.12);
+  font-size: 12px;
+  font-weight: 700;
+}
+.proof-upload > span {
+  display: grid;
+  gap: 3px;
+}
+.proof-upload small {
+  font-size: 10px;
+  font-weight: 400;
+}
+.proof-upload input {
+  width: 100%;
+  color: #fff;
+  font: 11px var(--font-body);
+}
+.proof-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.proof-file-name {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #fff;
+  font-size: 11px;
+}
+.remove-proof {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  font: 700 20px/1 var(--font-body);
+}
 .gcash-qr-placeholder {
   display: grid;
   place-items: center;
@@ -973,27 +1074,6 @@ ion-modal.cart-modal::part(content) {
 }
 .gcash-qr-probe {
   display: none;
-}
-.card-type-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-.card-type-options label {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  border: 1px solid rgba(255,255,255,.8);
-  border-radius: 10px;
-  color: #fff;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 700;
-}
-.card-type-options label.active {
-  background: rgba(255,255,255,.9);
-  color: var(--coral-dark);
 }
 .total-divider {
   height: 1px;

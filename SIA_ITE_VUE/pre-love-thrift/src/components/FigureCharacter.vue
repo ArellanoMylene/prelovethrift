@@ -15,8 +15,12 @@
       <circle cx="122" cy="109" r="7" fill="#ef9b8c" opacity=".7" />
       <circle cx="178" cy="109" r="7" fill="#ef9b8c" opacity=".7" />
       <path d="M138 116 Q150 126 162 116" fill="none" stroke="#a95c57" stroke-width="2" stroke-linecap="round" />
-      <image v-if="bottom" :href="bottom.img" v-bind="placement(bottom, geometry.bottom)" preserveAspectRatio="none" />
       <image v-if="top" :href="top.img" v-bind="placement(top, geometry.top)" preserveAspectRatio="none" />
+      <image v-if="bottom" :href="bottom.img" v-bind="placement(bottom, {
+        ...geometry.bottom,
+        x: geometry.bottom.x - geometry.bottom.width * 0.1,
+        width: geometry.bottom.width * 1.2,
+      })" preserveAspectRatio="none" />
       <image v-if="dress" :href="dress.img" v-bind="placement(dress, geometry.dress)" preserveAspectRatio="none" />
       <image v-if="shoes" :href="shoes.img" v-bind="placement(shoes, geometry.shoes)" preserveAspectRatio="none" />
     </g>
@@ -58,23 +62,23 @@ function placement(item: CartItem, target: FitBox) {
 }
 
 const geometry = computed(() => props.character.build === 'chubby' ? {
-  torso: 'M103 166 Q150 151 197 166 L214 338 Q213 367 202 386 L98 386 Q87 367 86 338Z',
+  torso: 'M103 166 Q150 151 197 166 L207 338 L207 386 L93 386 L93 338Z',
   arms: 'M103 174 L97 225 L79 325 M197 174 L203 225 L221 325',
   armWidth: 18,
-  legs: 'M98 378 L143 378 L141 555 Q126 565 109 558Z M157 378 L202 378 L191 558 Q174 565 159 555Z',
+  legs: 'M103 378 L143 378 L141 555 Q126 565 109 558Z M157 378 L197 378 L191 558 Q174 565 159 555Z',
   feet: 'M111 551 Q127 545 143 556 Q150 563 138 568 Q120 574 104 565 Q99 559 111 551Z M157 556 Q173 545 189 551 Q201 559 196 565 Q180 574 162 568 Q150 563 157 556Z',
   top: { x: 69, y: 151, width: 162, height: 190 },
-  bottom: { x: 94, y: 337, width: 112, height: 220 },
+  bottom: { x: 88, y: 326, width: 124, height: 231 },
   dress: { x: 63, y: 151, width: 174, height: 404 },
   shoes: { x: 84, y: 542, width: 132, height: 37 },
 } : {
-  torso: 'M111 166 Q150 153 189 166 L198 338 Q197 367 190 384 L110 384 Q103 367 102 338Z',
+  torso: 'M111 166 Q150 153 189 166 L195 338 L195 384 L105 384 L105 338Z',
   arms: 'M109 174 L103 225 L88 325 M191 174 L197 225 L212 325',
   armWidth: 16,
-  legs: 'M110 378 L145 378 L143 557 Q129 565 114 558Z M155 378 L190 378 L186 558 Q171 565 157 557Z',
+  legs: 'M112 378 L145 378 L143 557 Q129 565 114 558Z M155 378 L188 378 L186 558 Q171 565 157 557Z',
   feet: 'M114 551 Q129 545 145 556 Q151 563 139 568 Q122 574 107 565 Q102 559 114 551Z M155 556 Q171 545 186 551 Q198 559 193 565 Q178 574 160 568 Q149 563 155 556Z',
   top: { x: 78, y: 151, width: 144, height: 190 },
-  bottom: { x: 105, y: 337, width: 90, height: 220 },
+  bottom: { x: 99, y: 326, width: 102, height: 231 },
   dress: { x: 75, y: 151, width: 150, height: 404 },
   shoes: { x: 96, y: 542, width: 108, height: 37 },
 })

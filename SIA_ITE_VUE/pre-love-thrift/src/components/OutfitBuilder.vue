@@ -77,6 +77,9 @@ function untilt() { rx.value = 0; ry.value = 0 }
 /* Only pieces with a known slot can be worn, and they all come from the cart. */
 const wardrobe = computed(() => props.cart.flatMap(item => {
  const product = products.find(candidate => String(candidate.id) === String(item.id))
+ const category = product?.cat.toLowerCase() ?? ''
+ const name = (product?.name ?? item.name).toLowerCase()
+ if (category.includes('accessor') || category.includes('bag') || /\b(bag|handbag|accessor(?:y|ies))\b/.test(name)) return []
  const slot = product?.slot ?? item.slot
  return slot ? [{ ...item, img: product?.img ?? item.img, slot, fit: product?.fit ?? item.fit }] : []
 }))

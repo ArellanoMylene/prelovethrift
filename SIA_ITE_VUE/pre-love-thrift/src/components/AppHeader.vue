@@ -1,5 +1,5 @@
 <template>
-  <header class="hdr">
+  <header class="hdr" :class="{ 'dashboard-mode': dashboardMode }">
     <div class="wrap bar">
       <a class="brand" @click="go('top')">
         <img class="brand-mark" src="/assets/logo-emblem.png" alt="Pre-Loved Thrift emblem" />
@@ -29,15 +29,23 @@
           <span v-if="cartCount" class="badge">{{ cartCount }}</span>
         </button>
 
-        <button v-if="user" type="button" class="profile-chip" aria-label="Open profile" @click.stop.prevent="openProfile()">
+        <div v-if="user" class="profile-chip">
+          <button type="button" class="profile-avatar-button" aria-label="Open buyer dashboard"
+            title="Open buyer dashboard" @click.stop.prevent="openDashboard">
           <span class="profile-avatar">
             <img v-if="user.avatar" :src="user.avatar" alt="" />
             <template v-else>{{ user.name.charAt(0).toUpperCase() }}</template>
           </span>
+          </button>
           <span class="profile-details">
             <strong>{{ user.name }}</strong>
             <small>{{ user.email }}</small>
           </span>
+        </div>
+        <button v-if="user" type="button" class="account-menu-toggle" aria-label="More account options"
+          :aria-expanded="accountMenuOpen" aria-haspopup="menu" title="More account options"
+          @click.stop.prevent="accountMenuOpen = !accountMenuOpen">
+          <ion-icon :icon="chevronDownOutline" />
         </button>
 
         <button v-else type="button" aria-label="Account" :aria-expanded="user ? accountMenuOpen : undefined"
@@ -48,7 +56,6 @@
 
         <div v-if="user && accountMenuOpen" class="account-menu">
           <div class="account-heading"><b>{{ user.name }}</b><small>{{ user.email }}</small><span>Buyer account</span></div>
-          <button @click="accountMenuOpen = false; $emit('rider-login')">Delivery rider portal</button>
           <button class="menu-logout" @click="accountMenuOpen = false; $emit('logout')"><ion-icon :icon="logOutOutline" /> Log out</button>
         </div>
       </div>
@@ -58,14 +65,13 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { IonIcon } from '@ionic/vue'
-import { searchOutline, search, personOutline, person, bagHandle, storefrontOutline, logOutOutline, heartOutline } from 'ionicons/icons'
+import { searchOutline, search, personOutline, person, bagHandle, logOutOutline, heartOutline, chevronDownOutline } from 'ionicons/icons'
 
 const nav = [{ id: 'top', label: 'Home' }, { id: 'shop', label: 'Shop' }, { id: 'stylist', label: 'Outfit Builder' }, { id: 'deals', label: 'Deals' }, { id: 'contact', label: 'Contact' }]
-const props = defineProps<{ user: { name: string; email: string; avatar?: string } | null; searchOpen?: boolean; profileOpen?: boolean; cartCount?: number; wishCount?: number }>()
+const props = defineProps<{ user: { name: string; email: string; avatar?: string } | null; searchOpen?: boolean; profileOpen?: boolean; dashboardMode?: boolean; cartCount?: number; wishCount?: number }>()
 const emit = defineEmits<{
   (e: 'open-auth'): void
   (e: 'open-user'): void
-  (e: 'open-profile'): void
   (e: 'open-seller-center'): void
   (e: 'rider-login'): void
   (e: 'logout'): void
@@ -78,11 +84,10 @@ const emit = defineEmits<{
 const active = ref('top'), accountMenuOpen = ref(false); let lock = 0
 const openCart = () => (props.user ? emit('open-cart') : emit('open-auth'))
 const openWishlist = () => (props.user ? emit('open-wish') : emit('open-auth'))
-const openProfile = () => {
+const openDashboard = () => {
   accountMenuOpen.value = false
-  emit('open-profile')
+  emit('open-user')
 }
-
 const content = () => document.querySelector('ion-content') as HTMLElement | null
 function go(id: string) {
   active.value = id; lock = Date.now() + 800
@@ -111,6 +116,7 @@ onBeforeUnmount(() => scroller?.removeEventListener('scroll', spy))
 </script>
 <style scoped>
 .hdr { --hdr-ink: #2f2726; position: sticky; top: 0; z-index: 50; background: rgba(251,248,246,.96); backdrop-filter: blur(10px); border-bottom: 1px solid #eee7e2; }
+.hdr.dashboard-mode .wrap { max-width: none; margin: 0; padding-left: 0; }
 .bar { display: flex; align-items: center; justify-content: space-between; min-height: 78px; gap: 22px; }
 .brand { display: flex; align-items: center; gap: 12px; flex-shrink: 0; cursor: pointer; }
 .brand-mark { width: 42px; height: 42px; object-fit: contain; border-radius: 50%; background: #fff; border: 1px solid #e8d8d8; box-shadow: 0 0 0 2px rgba(255,255,255,0.5); }
@@ -142,8 +148,12 @@ nav a:hover::after, nav a.on::after { transform: scaleX(1); }
   background: rgba(255,255,255,0.7);
   box-shadow: 0 10px 20px rgba(64, 33, 31, 0.06);
   color: var(--hdr-ink);
-  cursor: pointer;
 }
+.profile-avatar-button { padding: 0; border-radius: 50%; }
+.profile-avatar-button:focus-visible { outline: 2px solid var(--coral-dark); outline-offset: 2px; }
+.account-menu-toggle { width: 25px; height: 34px; display: grid; place-items: center; border-radius: 8px; color: #806b64; }
+.account-menu-toggle:hover, .account-menu-toggle[aria-expanded="true"] { background: #fbefed !important; color: var(--coral-dark); }
+.account-menu-toggle ion-icon { font-size: 15px; }
 .profile-avatar {
   width: 32px;
   height: 32px;

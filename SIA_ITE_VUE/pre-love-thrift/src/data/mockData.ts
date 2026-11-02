@@ -7,8 +7,8 @@ export interface GarmentImageFit {
   right: number
   bottom: number
 }
-export interface Product { id: number; name: string; price: number; was?: number; img: string; hot?: boolean; 
-cat: string; slot?: Slot; fit?: GarmentImageFit }
+export interface Product { id: number | string; name: string; price: number; was?: number; img: string; hot?: boolean; newArrival?: boolean;
+cat: string; type?: string; slot?: Slot; fit?: GarmentImageFit }
 export interface Garment { id: string; name: string; src: string; slot: Slot }
 export interface Character { id: string; label: string; gender: 'girl' | 'boy'; build: 'petite' | 'chubby' }
 export type Slot = 'dress' | 'top' | 'bottom' | 'shoes'
@@ -22,6 +22,19 @@ fit?: GarmentImageFit
 selected?: boolean
 size?: string
 note?: string
+cat?: string
+type?: string
+}
+export function getProductSizes(product: { name: string; slot?: Slot; cat?: string; type?: string }): string[] {
+  const details = `${product.slot ?? ''} ${product.cat ?? ''} ${product.type ?? ''} ${product.name}`.toLowerCase()
+  if (/\b(shoe|shoes|footwear|sneaker|sneakers|boot|boots|sandal|sandals)\b/.test(details)) {
+    return Array.from({ length: 10 }, (_, index) => `EU ${index + 36}`)
+  }
+  if (product.slot === 'dress' || product.slot === 'top' || product.slot === 'bottom' ||
+    /\b(clothing|apparel|dress|dresses|top|tops|shirt|shirts|t-shirt|t-shirts|denim|jeans|pants|trousers|shorts|skirt|skirts)\b/.test(details)) {
+    return ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+  }
+  return []
 }
 export interface OrderRecord {
 id: string
@@ -29,6 +42,7 @@ date: string
 items: CartItem[]
 total: number
 payment?: string
+paymentProof?: string
 status?: string
 rider?: string
 riderEmail?: string

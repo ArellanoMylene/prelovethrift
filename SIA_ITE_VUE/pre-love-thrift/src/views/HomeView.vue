@@ -6,13 +6,12 @@
           <div class="shipping-announcement">Free shipping on orders over ₱2,900 · Spin the wheel in Deals for up to 20% off</div>
         </div>
         <AppHeader v-if="!sellerOpen && !riderOpen" :user="user" :wish-count="wished.length" :cart-count="cart.length"
-          :search-open="searchOpen" :profile-open="dashboardOpen || authOpen"
-        @open-auth="authOpen = true" @open-user="openCustomerDashboard('overview')" @open-profile="openCustomerDashboard('profile')"
+          :search-open="searchOpen" :profile-open="dashboardOpen || authOpen" :dashboard-mode="dashboardOpen"
+        @open-auth="authOpen = true" @open-user="openCustomerDashboard('overview')"
         @open-seller-center="openSellerAuth" @logout="confirmBuyerLogout"
-        @rider-login="riderAuthOpen = true"
         @open-search="searchOpen = true" @open-chat="chatOpen = true"
         @open-wish="wishOpen = true" @open-cart="cartOpen = true"
-        @navigate="navigateStorefront" />
+        @navigate="handleHeaderNavigation" />
       <div v-if="!dashboardOpen && !sellerOpen && !riderOpen" class="storefront">
         <HeroSection />
         <CategoriesSection />
@@ -22,15 +21,13 @@
         <AppFooter />
       </div>
       <UserDashboard v-if="user" :key="dashboardView" v-show="dashboardOpen" :user="user" :wishlist="wished" :cart-count="cart.length"
-        :orders="orders" :products="products" :categories="categories" :initial-view="dashboardView"
-        @storefront="dashboardOpen = false" @logout="confirmBuyerLogout"
+        :orders="orders" :products="dashboardProducts" :categories="categories" :initial-view="dashboardView"
+        @storefront="dashboardOpen = false"
         @add-cart="dashboardAddToCart" @toggle-wish="dashboardToggleWish"
         @update-user="onProfileUpdate" @message="addOrderMessage" />
-      <SellerDashboard v-if="sellerUser && sellerOpen" :user="sellerUser" :orders="sellerOrders"
-        @storefront="returnToStorefront" @logout="confirmSellerLogout"
-        @navigate="navigateStorefront" @open-chat="chatOpen = true"
-        @open-search="searchOpen = true" @open-wish="wishOpen = true"
-        @open-cart="cartOpen = true" @status-change="updateSellerOrderStatus" @rider-change="updateSellerOrderRider" />
+      <SellerDashboard v-if="sellerUser && sellerOpen" :user="sellerUser" :orders="sellerOrders" :riders="registeredRiders"
+        @logout="confirmSellerLogout" @profile-update="onSellerProfileUpdate"
+        @status-change="updateSellerOrderStatus" @rider-change="updateSellerOrderRider" />
       <RiderDashboard v-if="riderUser && riderOpen" :rider="riderUser" :orders="sellerOrders"
         @storefront="returnToStorefront" @logout="confirmRiderLogout"
         @profile-update="updateRiderProfile"
@@ -38,8 +35,8 @@
     </ion-content>
 
     <AuthModal :open="authOpen" @close="closeAuth" @auth="onAuth" @seller-login="openSellerAuth" @rider-login="riderAuthOpen = true" />
-    <SellerAuthModal :open="sellerAuthOpen" @close="sellerAuthOpen = false" @auth="onSellerAuth" />
-    <RiderAuthModal :open="riderAuthOpen" @close="riderAuthOpen = false" @auth="onRiderAuth" />
+    <SellerAuthModal :open="sellerAuthOpen" @close="onSellerAuthDismiss" @back="backToAuthSelection" @auth="onSellerAuth" />
+    <RiderAuthModal :open="riderAuthOpen" @close="onRiderAuthDismiss" @back="backToAuthSelection" @auth="onRiderAuth" />
     <SearchModal :open="searchOpen" @close="searchOpen = false" />
     <ChatModal :open="chatOpen" @close="chatOpen = false" />
     <CartModal :open="cartOpen" :items="cart" :user="user" @close="cartOpen = false"
@@ -64,7 +61,7 @@
         </div>
 
         <div class="success-body">
-          <h2>Order confirmed <span class="spark">✨</span></h2>
+          <h2>{{ orderConfirmation.payment === 'GCash' ? 'Order placed' : 'Order confirmed' }} <span class="spark">✨</span></h2>
           <p class="panel-subtitle">Order placed · demo checkout</p>
 
           <div class="confirmation-box">
@@ -84,7 +81,7 @@
   </ion-page>
 </template>
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { IonPage, IonContent, alertController } from '@ionic/vue'
 import { closeOutline } from 'ionicons/icons'
 import AppHeader from '../components/AppHeader.vue'
@@ -104,31 +101,97 @@ import SearchModal from '../modals/SearchModal.vue'
 import ChatModal from '../modals/ChatModal.vue'
 import CartModal from '../modals/CartModal.vue'
 import WishlistModal from '../modals/WishlistModal.vue'
-import { categories, products, type CartItem, type OrderMessage, type OrderRecord, type Product, type SellerOrderRecord } from '../data/mockData'
+import { categories, getProductSizes, products, type CartItem, type OrderMessage, type OrderRecord, type Product, type SellerOrderRecord } from '../data/mockData'
+import { USD_TO_PHP } from '../utils/currency'
+import { getSupabaseClient } from '../utils/supabase'
 
 type User = { name: string; email: string; phone?: string; address?: string; avatar?: string }
+type RiderAccount = { name: string; email: string; phone?: string }
 const authOpen = ref(false), sellerAuthOpen = ref(false), riderAuthOpen = ref(false), dashboardOpen = ref(false), sellerOpen = ref(false), riderOpen = ref(false), searchOpen = ref(false), chatOpen = ref(false)
 const cartOpen = ref(false), wishOpen = ref(false)
 const dashboardView = ref<'overview' | 'orders' | 'wishlist' | 'profile' | 'categories'>('overview')
 const cartToast = ref(false)
 const orderConfirmationOpen = ref(false)
+const returningToAuthSelection = ref(false)
 const orderConfirmation = ref({ orderId: 'PL-1004', payment: 'GCash', total: 0 })
 const user = ref<User | null>(JSON.parse(localStorage.getItem('pl_me') || 'null'))
 const sellerUser = ref<User | null>(JSON.parse(localStorage.getItem('pl_seller_me') || 'null'))
 const riderUser = ref<User | null>(JSON.parse(localStorage.getItem('pl_rider_me') || 'null'))
+const registeredRiders = ref<RiderAccount[]>([])
 const wished = ref<CartItem[]>([])
 const cart = ref<CartItem[]>([])
 const orders = ref<OrderRecord[]>([])
 const sellerOrders = ref<SellerOrderRecord[]>([])
+const dashboardProducts = ref<Product[]>(products.map(product => ({ ...product, newArrival: true })))
 const wishedIds = computed(() => wished.value.map(i => i.id))
 let pending: (() => void) | null = null
 let cartToastTimer: number | undefined
+let unsubscribeSupabaseAuth: (() => void) | undefined
 
-for (const key of ['pl_seller_me', 'pl_rider_me', 'pl_seller_accounts', 'pl_rider_accounts']) {
-  localStorage.removeItem(key)
+function refreshRegisteredRiders() {
+  try {
+    const savedRiders = localStorage.getItem('pl_rider_accounts')
+    if (!savedRiders) {
+      registeredRiders.value = []
+      return
+    }
+    const parsed: unknown = JSON.parse(savedRiders)
+    if (!Array.isArray(parsed)) throw new Error('Stored rider accounts are invalid.')
+    registeredRiders.value = parsed.filter((rider): rider is RiderAccount =>
+      typeof rider === 'object' && rider !== null &&
+      'name' in rider && typeof rider.name === 'string' &&
+      'email' in rider && typeof rider.email === 'string'
+    )
+  } catch (error) {
+    console.error('Unable to load registered riders.', error)
+    registeredRiders.value = []
+  }
 }
+refreshRegisteredRiders()
 
 onMounted(() => {
+  const supabase = getSupabaseClient()
+  if (supabase) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+        const email = session.user.email
+        if (!email) {
+          console.error('Supabase sign-in completed without an email address.')
+          return
+        }
+        const metadata = session.user.user_metadata
+        const existing = user.value?.email.toLowerCase() === email.toLowerCase() ? user.value : null
+        onAuth({
+          name: metadata.full_name || metadata.name || existing?.name || email.split('@')[0] || 'Shopper',
+          email,
+          phone: existing?.phone,
+          address: existing?.address,
+          avatar: metadata.avatar_url || metadata.picture || existing?.avatar
+        })
+      } else if (event === 'SIGNED_OUT') {
+        user.value = null
+        localStorage.removeItem('pl_me')
+        load(null)
+        dashboardOpen.value = false
+      }
+    })
+    unsubscribeSupabaseAuth = () => subscription.unsubscribe()
+
+    const oauthError = new URLSearchParams(window.location.search).get('error_description')
+    if (oauthError) {
+      const cleanUrl = new URL(window.location.href)
+      cleanUrl.searchParams.delete('error')
+      cleanUrl.searchParams.delete('error_code')
+      cleanUrl.searchParams.delete('error_description')
+      window.history.replaceState({}, document.title, cleanUrl)
+      void alertController.create({
+        header: 'Social sign-in failed',
+        message: oauthError,
+        buttons: ['OK']
+      }).then(alert => alert.present())
+    }
+  }
+
   if (riderUser.value) riderOpen.value = true
   if (document.querySelector('script[data-elfsight-platform], script[src^="https://elfsightcdn.com/platform.js"]')) return
   const script = document.createElement('script')
@@ -138,6 +201,8 @@ onMounted(() => {
   script.onerror = () => console.error('Unable to load Elfsight widgets.')
   document.head.appendChild(script)
 })
+
+onUnmounted(() => unsubscribeSupabaseAuth?.())
 
 /* Cart and favorites live per account so they follow the buyer across visits. */
 const keyFor = (u: User) => `pl_data_${u.email}`
@@ -168,7 +233,18 @@ const needLogin = (action: () => void) => {
   if (user.value) return action()
   pending = action; authOpen.value = true
 }
-const toItem = (p: Product): CartItem => ({ id: p.id, name: p.name, price: p.price, img: p.img, slot: p.slot, fit: p.fit, selected: true })
+const toItem = (p: Product | CartItem, size?: string): CartItem => ({
+  id: size ? `${p.id}::${size}` : p.id,
+  name: p.name,
+  price: p.price,
+  img: p.img,
+  slot: p.slot,
+  fit: p.fit,
+  selected: true,
+  size,
+  cat: p.cat,
+  type: p.type
+})
 
 const toggleWish = (p: Product) => needLogin(() => {
   const i = wished.value.findIndex(w => w.id === p.id)
@@ -181,10 +257,48 @@ const showCartToast = () => {
     cartToast.value = false
   }, 1500)
 }
-const addToCart = (p: Product) => needLogin(() => {
-  if (!cart.value.some(c => c.id === p.id)) cart.value.push(toItem(p))
+async function promptForProductSize(product: Product | CartItem) {
+  const sizes = getProductSizes(product)
+  if (!sizes.length) return undefined
+
+  let selectedSize = ''
+  const alert = await alertController.create({
+    header: sizes[0].startsWith('EU ') ? 'Select shoe size' : 'Select clothing size',
+    message: 'Choose a size before adding this item to your cart.',
+    inputs: sizes.map(size => ({
+      type: 'radio' as const,
+      label: size,
+      value: size,
+      handler: input => { selectedSize = String(input.value) }
+    })),
+    buttons: [
+      { text: 'Cancel', role: 'cancel' },
+      { text: 'Add to cart', role: 'confirm', handler: () => Boolean(selectedSize) }
+    ]
+  })
+  await alert.present()
+  const result = await alert.onDidDismiss()
+  return result.role === 'confirm' ? selectedSize : undefined
+}
+async function addCartItem(product: Product | CartItem, afterAdded?: () => void) {
+  const size = await promptForProductSize(product)
+  if (getProductSizes(product).length && !size) return
+
+  const item = toItem(product, size)
+  const alreadyInCart = cart.value.some(existing => String(existing.id) === String(item.id) && existing.size === item.size)
+  if (!alreadyInCart) cart.value.push(item)
+  afterAdded?.()
   showCartToast()
-})
+}
+const reportAddToCartError = (error: unknown) => {
+  console.error('Unable to add product to cart.', error)
+  void alertController.create({
+    header: 'Unable to add item',
+    message: 'Please try again.',
+    buttons: ['OK']
+  }).then(alert => alert.present())
+}
+const addToCart = (p: Product) => needLogin(() => { void addCartItem(p).catch(reportAddToCartError) })
 const removeWish = (id: CartItem['id']) => {
   const i = wished.value.findIndex(w => w.id === id); if (i >= 0) wished.value.splice(i, 1)
 }
@@ -195,17 +309,16 @@ const editCart = (p: { id: CartItem['id']; size?: string; note?: string }) => {
   const it = cart.value.find(c => c.id === p.id)
   if (it) { it.size = p.size; it.note = p.note }
 }
-const moveToCart = (p: CartItem) => {
-  if (!cart.value.some(c => c.id === p.id)) cart.value.push({ ...p, selected: true })
-  removeWish(p.id)
-}
+const moveToCart = (p: CartItem) => needLogin(() => {
+  void addCartItem(p, () => removeWish(p.id)).catch(reportAddToCartError)
+})
 /* A check button on each cart row marks what actually gets checked out. */
 const toggleCartSelect = (id: CartItem['id']) => {
   const it = cart.value.find(c => c.id === id)
   if (it) it.selected = it.selected === false
 }
 const toggleCartAll = (value: boolean) => cart.value.forEach(c => { c.selected = value })
-const checkoutCart = (checkout: { orderId: string; payment: string; total: number; customerName: string; customerEmail: string; customerPhone: string; customerAddress: string }) => {
+const checkoutCart = (checkout: { orderId: string; payment: string; total: number; customerName: string; customerEmail: string; customerPhone: string; customerAddress: string; paymentProof?: string }) => {
   const purchased = cart.value.filter(c => c.selected !== false)
   if (!purchased.length) return
   const orderTotal = purchased.reduce((sum, item) => sum + item.price, 0)
@@ -215,6 +328,7 @@ const checkoutCart = (checkout: { orderId: string; payment: string; total: numbe
     items: purchased.map(item => ({ ...item })),
     total: orderTotal,
     payment: checkout.payment,
+    paymentProof: checkout.paymentProof,
     status: 'Pending',
     customerEmail: checkout.customerEmail,
     customerName: checkout.customerName,
@@ -228,6 +342,7 @@ const checkoutCart = (checkout: { orderId: string; payment: string; total: numbe
     items: purchased.map(item => ({ ...item })),
     total: orderTotal,
     payment: checkout.payment,
+    paymentProof: checkout.paymentProof,
     status: 'Pending',
     customerEmail: checkout.customerEmail,
     customerName: checkout.customerName,
@@ -257,13 +372,51 @@ const onOutfitCheckout = (items: CartItem[]) => {
   cartOpen.value = true
 }
 
+function loadDashboardProducts() {
+  const sellerProducts: Product[] = []
+  const inventoryKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+    .filter((key): key is string => key?.startsWith('pl_seller_inventory_') ?? false)
+
+  for (const key of inventoryKeys) {
+    try {
+      const saved = localStorage.getItem(key)
+      if (!saved) continue
+      const inventory: unknown = JSON.parse(saved)
+      if (!Array.isArray(inventory)) throw new Error(`Seller inventory in ${key} is invalid.`)
+      for (const item of inventory) {
+        if (typeof item !== 'object' || item === null ||
+          !('id' in item) || typeof item.id !== 'string' ||
+          !('name' in item) || typeof item.name !== 'string' ||
+          !('category' in item) || typeof item.category !== 'string' ||
+          !('price' in item) || typeof item.price !== 'number' ||
+          !('stock' in item) || typeof item.stock !== 'number' || item.stock <= 0 ||
+          !('img' in item) || typeof item.img !== 'string') continue
+        sellerProducts.push({
+          id: `${key.slice('pl_seller_inventory_'.length)}:${item.id}`,
+          name: item.name,
+          price: item.price / USD_TO_PHP,
+          img: item.img,
+          cat: item.category,
+          type: item.type,
+          newArrival: true
+        })
+      }
+    } catch (error) {
+      console.error(`Unable to load products from ${key}.`, error)
+    }
+  }
+  dashboardProducts.value = [...sellerProducts, ...products.map(product => ({ ...product, newArrival: true }))]
+}
+watch(dashboardOpen, isOpen => {
+  if (isOpen) loadDashboardProducts()
+})
+
 const openCustomerDashboard = (tab: 'overview' | 'orders' | 'wishlist' | 'profile' | 'categories' = 'overview') => {
   dashboardOpen.value = true
   dashboardView.value = tab
   sellerOpen.value = false
   authOpen.value = false
 }
-
 const onAuth = (u: User) => {
   user.value = u; localStorage.setItem('pl_me', JSON.stringify(u)); load(u)
   openCustomerDashboard('overview')
@@ -277,7 +430,38 @@ const onProfileUpdate = (updated: User) => {
   sellerOpen.value = false
 }
 const closeAuth = () => { authOpen.value = false; pending = null }
-const logout = () => {
+const backToAuthSelection = () => {
+  returningToAuthSelection.value = true
+  sellerAuthOpen.value = false
+  riderAuthOpen.value = false
+}
+const onSellerAuthDismiss = () => {
+  sellerAuthOpen.value = false
+  if (!returningToAuthSelection.value) return
+  returningToAuthSelection.value = false
+  authOpen.value = true
+}
+const onRiderAuthDismiss = () => {
+  riderAuthOpen.value = false
+  if (!returningToAuthSelection.value) return
+  returningToAuthSelection.value = false
+  authOpen.value = true
+}
+const logout = async () => {
+  const supabase = getSupabaseClient()
+  if (supabase) {
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      console.error('Unable to sign out from Supabase.', error)
+      const alert = await alertController.create({
+        header: 'Unable to log out',
+        message: error.message,
+        buttons: ['OK']
+      })
+      await alert.present()
+      return
+    }
+  }
   user.value = null; localStorage.removeItem('pl_me'); load(null); dashboardOpen.value = false
 }
 async function confirmAction(header: string, message: string) {
@@ -295,7 +479,7 @@ async function confirmAction(header: string, message: string) {
   return result.role === 'confirm'
 }
 async function confirmBuyerLogout() {
-  if (await confirmAction('Log out?', 'Are you sure you want to log out of your account?')) logout()
+  if (await confirmAction('Log out?', 'Are you sure you want to log out of your account?')) await logout()
 }
 async function confirmSellerLogout() {
   if (await confirmAction('Log out?', 'Are you sure you want to log out of your seller account?')) sellerLogout()
@@ -322,6 +506,7 @@ const openSellerAuth = () => {
   sellerAuthOpen.value = true
 }
 const onSellerAuth = (seller: User) => {
+  refreshRegisteredRiders()
   sellerUser.value = seller
   localStorage.setItem('pl_seller_me', JSON.stringify(seller))
   riderUser.value = null
@@ -330,7 +515,11 @@ const onSellerAuth = (seller: User) => {
   dashboardOpen.value = false
   sellerOpen.value = true
 }
+const onSellerProfileUpdate = (seller: User) => {
+  sellerUser.value = seller
+}
 const onRiderAuth = (rider: User) => {
+  refreshRegisteredRiders()
   riderUser.value = rider
   localStorage.setItem('pl_rider_me', JSON.stringify(rider))
   sellerUser.value = null
@@ -379,8 +568,12 @@ const returnToStorefront = () => { sellerOpen.value = false; dashboardOpen.value
 const updateSellerOrderStatus = (id: string, status: string) => {
   updateOrderData(id, { status })
 }
-const updateSellerOrderRider = (id: string, rider: string) => {
-  updateOrderData(id, { rider })
+const updateSellerOrderRider = (id: string, rider: RiderAccount) => {
+  updateOrderData(id, {
+    rider: rider.name,
+    riderEmail: rider.email,
+    riderPhone: rider.phone
+  })
 }
 const updateDeliveryOrder = (id: string, patch: Partial<OrderRecord>) => {
   updateOrderData(id, patch)
@@ -413,6 +606,14 @@ function updateOrderData(id: string, patch: Partial<OrderRecord>) {
 }
 const dashboardAddToCart = (product: Product) => addToCart(product)
 const dashboardToggleWish = (product: Product) => toggleWish(product)
+function handleHeaderNavigation(id: string) {
+  if (dashboardOpen.value && id === 'shop') {
+    loadDashboardProducts()
+    dashboardView.value = 'categories'
+    return
+  }
+  void navigateStorefront(id)
+}
 async function navigateStorefront(id: string) {
   if (dashboardOpen.value || sellerOpen.value) {
     dashboardOpen.value = false; sellerOpen.value = false
